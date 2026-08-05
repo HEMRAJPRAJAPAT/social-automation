@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reel_user
+      POSTGRES_PASSWORD: reel_password
+      POSTGRES_DB: reel_automation
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reel_user -d reel_automation']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://reel_user:reel_password@postgres:5432/reel_automation?schema=public
+      STORAGE_ROOT: /app/storage
+      PUBLIC_BASE_URL: http://localhost:3000/media
+    ports:
+      - '3000:3000'
+    volumes:
+      - storage_output:/app/storage/output
+      - storage_temp:/app/storage/temp
+      - storage_cache:/app/storage/cache
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  postgres_data:
+  storage_output:
+  storage_temp:
+  storage_cache:

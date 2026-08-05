@@ -1,0 +1,86 @@
+databases:
+  - name: reel-automation-db
+    plan: free
+    databaseName: reel_automation
+    user: reel_user
+
+services:
+  - type: web
+    name: reel-automation
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Wired automatically from the database above — no manual entry needed.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: reel-automation-db
+          property: connectionString
+
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: info
+      - key: STORAGE_ROOT
+        value: ./storage
+      # Render assigns https://reel-automation.onrender.com if that subdomain
+      # is free; if you rename the service above, update this to match, or
+      # just read the real URL from the Render dashboard after first deploy
+      # and paste it in here (then redeploy).
+      - key: PUBLIC_BASE_URL
+        value: https://reel-automation.onrender.com/media
+
+      - key: CRON
+        value: 0 9 * * *
+      - key: TIMEZONE
+        value: UTC
+      - key: RUN_ON_STARTUP
+        value: false
+
+      - key: CONTENT_NICHE
+        value: AI for Developers
+      - key: CONTENT_LANGUAGE
+        value: en
+      - key: CONTENT_POSTING_FREQUENCY
+        value: daily
+      - key: CONTENT_VIDEO_DURATION_SECONDS
+        value: 30
+      - key: CONTENT_WRITING_STYLE
+        value: friendly, concise, expert but approachable
+
+      - key: GEMINI_TEXT_MODEL
+        value: gemini-flash-latest
+      - key: GEMINI_TTS_MODEL
+        value: ''
+      - key: VOICE_PROVIDER
+        value: espeak
+
+      - key: STORAGE_PROVIDER
+        value: local
+      - key: INSTAGRAM_GRAPH_API_VERSION
+        value: v20.0
+      - key: RETRY_MAX_ATTEMPTS
+        value: 3
+      - key: RETRY_BASE_DELAY_MS
+        value: 1000
+      - key: BACKGROUND_MUSIC_PATH
+        value: ''
+
+      # Secrets — deliberately left blank here (sync: false means Render
+      # prompts you to fill these in via the dashboard instead of storing
+      # the value in this committed file).
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: PIXABAY_API_KEY
+        sync: false
+      - key: INSTAGRAM_ACCESS_TOKEN
+        sync: false
+      - key: PAGE_ID
+        sync: false
+      - key: BUSINESS_ACCOUNT_ID
+        sync: false

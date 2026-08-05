@@ -1,0 +1,316 @@
+// Prisma schema for the Reel Automation pipeline.
+// Table names are explicitly snake_case via @@map to match the spec's DB design.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum TopicCategory {
+  TUTORIAL
+  TIPS
+  NEWS
+  MISTAKES
+  COMPARISON
+  LIST
+  BEGINNER
+  ADVANCED
+}
+
+enum TopicStatus {
+  PLANNED
+  USED
+  SKIPPED
+}
+
+enum PostStatus {
+  DRAFT
+  RESEARCHING
+  SCRIPTING
+  VOICING
+  SOURCING_MEDIA
+  RENDERING
+  READY
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum RenderStatus {
+  PENDING
+  RENDERING
+  DONE
+  FAILED
+}
+
+enum MediaProviderName {
+  PEXELS
+  PIXABAY
+}
+
+enum MediaAssetType {
+  VIDEO
+  IMAGE
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+}
+
+enum StepStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum PromptPurpose {
+  TOPIC
+  RESEARCH
+  SCRIPT
+  CAPTION
+  HASHTAGS
+}
+
+enum SchedulerJobStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+/// One row per content "channel profile". Secrets (API keys/tokens) stay in
+/// env vars; this table holds the non-secret content configuration so the
+/// same codebase can drive multiple niches/accounts (bonus feature).
+model Setting {
+  id                   String   @id @default(uuid())
+  key                  String   @unique
+  niche                String
+  language             String   @default("en")
+  postingFrequency     String   @default("daily")
+  videoDurationSeconds Int      @default(45)
+  writingStyle         String
+  cronExpression       String   @default("0 9 * * *")
+  timezone             String   @default("UTC")
+  isActive             Boolean  @default(true)
+  envPrefix            String? // e.g. "MAIN" -> MAIN_INSTAGRAM_ACCESS_TOKEN, for multi-account setups
+  metadata             Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  topics     Topic[]
+  executions Execution[]
+
+  @@map("settings")
+}
+
+/// A planned or already-used content topic. Uniqueness of `normalizedTitle`
+/// plus the history query in TopicPlanner is what guarantees no repeats.
+model Topic {
+  id              String        @id @default(uuid())
+  settingId       String
+  setting         Setting       @relation(fields: [settingId], references: [id])
+  title           String
+  normalizedTitle String
+  slug            String        @unique
+  category        TopicCategory
+  hook            String
+  summary         String
+  keywords        String[]
+  status          TopicStatus   @default(PLANNED)
+  plannedFor      DateTime
+  usedAt          DateTime?
+  createdAt       DateTime      @default(now())
+
+  posts Post[]
+
+  @@unique([settingId, normalizedTitle])
+  @@index([settingId, status])
+  @@map("topics")
+}
+
+/// One Instagram Reel post (one topic -> one post; a post may have several
+/// rendered Video variants, see `videos`).
+model Post {
+  id                   String     @id @default(uuid())
+  topicId              String
+  topic                Topic      @relation(fields: [topicId], references: [id])
+  language             String
+  status               PostStatus @default(DRAFT)
+  researchJson         Json?
+  script               Json?
+  captionText          String?
+  hashtags             String[]
+  igTitle              String?
+  selectedVideoId      String?    @unique
+  instagramMediaId     String?
+  instagramContainerId String?
+  instagramPermalink   String?
+  publishAttempts      Int        @default(0)
+  lastPublishError     String?
+  publishedAt          DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  videos        Video[]         @relation("PostVideos")
+  selectedVideo Video?          @relation("SelectedVideo", fields: [selectedVideoId], references: [id])
+  mediaAssets   MediaAsset[]
+  promptHistory PromptHistory[]
+  executions    Execution[]
+
+  @@index([status])
+  @@map("posts")
+}
+
+/// A rendered MP4 for a post. Multiple rows support the bonus "generate
+/// multiple Reel variations" feature; `isSelected` marks the one to publish.
+model Video {
+  id              String       @id @default(uuid())
+  postId          String
+  post            Post         @relation("PostVideos", fields: [postId], references: [id])
+  variantLabel    String       @default("default")
+  filePath        String
+  publicUrl       String?
+  subtitlesPath   String?
+  durationSeconds Float
+  width           Int          @default(1080)
+  height          Int          @default(1920)
+  fileSizeBytes   Int?
+  renderStatus    RenderStatus @default(PENDING)
+  isSelected      Boolean      @default(false)
+  errorMessage    String?
+  createdAt       DateTime     @default(now())
+
+  selectedFor Post? @relation("SelectedVideo")
+
+  @@index([postId])
+  @@map("videos")
+}
+
+/// A downloaded stock video/image, deduplicated by checksum so the same
+/// asset is never fetched twice across posts.
+model MediaAsset {
+  id              String            @id @default(uuid())
+  postId          String?
+  post            Post?             @relation(fields: [postId], references: [id])
+  provider        MediaProviderName
+  providerAssetId String
+  type            MediaAssetType
+  query           String
+  sourceUrl       String
+  localPath       String?
+  checksum        String            @unique
+  width           Int?
+  height          Int?
+  durationSeconds Float?
+  createdAt       DateTime          @default(now())
+
+  @@index([provider, providerAssetId])
+  @@map("media_assets")
+}
+
+/// Every scheduler tick, whether or not it produced a post.
+model SchedulerLog {
+  id          String             @id @default(uuid())
+  jobName     String
+  status      SchedulerJobStatus
+  message     String?
+  executionId String?
+  execution   Execution?         @relation(fields: [executionId], references: [id])
+  startedAt   DateTime
+  finishedAt  DateTime?
+  createdAt   DateTime           @default(now())
+
+  @@map("scheduler_logs")
+}
+
+/// Every outbound call to an external API (Gemini/Pexels/Pixabay/Instagram),
+/// used for retry observability and the future performance dashboard.
+model ApiLog {
+  id             String   @id @default(uuid())
+  provider       String
+  endpoint       String
+  method         String
+  statusCode     Int?
+  latencyMs      Int
+  attempt        Int      @default(1)
+  success        Boolean
+  errorMessage   String?
+  requestSummary Json?
+  createdAt      DateTime @default(now())
+
+  @@index([provider, createdAt])
+  @@map("api_logs")
+}
+
+/// Every LLM prompt/response pair, for auditability and to detect repeated
+/// hooks/phrasing across posts (bonus: "avoid repeated hooks").
+model PromptHistory {
+  id         String        @id @default(uuid())
+  postId     String?
+  post       Post?         @relation(fields: [postId], references: [id])
+  purpose    PromptPurpose
+  model      String
+  prompt     String
+  response   String
+  tokensUsed Int?
+  createdAt  DateTime      @default(now())
+
+  @@index([purpose, createdAt])
+  @@map("prompt_history")
+}
+
+/// One row per pipeline run (one per day, per active Setting). Drives
+/// resumability: on restart, find today's non-terminal Execution and
+/// continue from the first incomplete ExecutionStep.
+model Execution {
+  id           String          @id @default(uuid())
+  settingId    String
+  setting      Setting         @relation(fields: [settingId], references: [id])
+  postId       String?
+  post         Post?           @relation(fields: [postId], references: [id])
+  runDate      DateTime        @db.Date
+  status       ExecutionStatus @default(PENDING)
+  currentStep  String?
+  errorMessage String?
+  startedAt    DateTime        @default(now())
+  finishedAt   DateTime?
+
+  steps         ExecutionStep[]
+  schedulerLogs SchedulerLog[]
+
+  @@unique([settingId, runDate])
+  @@map("execution_history")
+}
+
+/// Fine-grained per-step record within an Execution, enabling skip-on-resume.
+model ExecutionStep {
+  id           String     @id @default(uuid())
+  executionId  String
+  execution    Execution  @relation(fields: [executionId], references: [id])
+  stepName     String
+  status       StepStatus
+  attempt      Int        @default(1)
+  output       Json?
+  errorMessage String?
+  startedAt    DateTime   @default(now())
+  finishedAt   DateTime?
+
+  @@unique([executionId, stepName])
+  @@map("execution_steps")
+}
