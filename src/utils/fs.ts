@@ -40,6 +40,15 @@ export async function downloadToFile(url: string, destPath: string): Promise<voi
   });
 }
 
+export async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function sha256OfFile(filePath: string): Promise<string> {
   const buffer = await fs.readFile(filePath);
   return createHash('sha256').update(buffer).digest('hex');

@@ -19,7 +19,7 @@ import type { IVideoRepository } from '../repositories/interfaces/IVideoReposito
 import type { IMediaSourcingService } from '../services/interfaces/IMediaSourcingService.js';
 import type { IVoiceProvider } from '../services/interfaces/IVoiceProvider.js';
 import type { IStorageProvider } from '../storage/IStorageProvider.js';
-import { cleanupOldFiles, ensureDir, executionWorkDir } from '../utils/fs.js';
+import { cleanupOldFiles, ensureDir, executionWorkDir, fileExists } from '../utils/fs.js';
 import { childLogger } from '../utils/logger.js';
 import type { IVideoComposer } from '../video/IVideoComposer.js';
 
@@ -148,37 +148,55 @@ export class PipelineOrchestrator {
     );
     await this.postRepository.update(post.id, { status: 'VOICING', script });
 
-    const voiceOver = await this.runStep(executionId, 'VOICE', () =>
-      this.voiceProvider.synthesize(script.fullNarrationText, {
-        outputPath: path.join(workDir, 'voice.wav'),
-        language: settings.language,
-      }),
+    const voiceOver = await this.runStep(
+      executionId,
+      'VOICE',
+      () =>
+        this.voiceProvider.synthesize(script.fullNarrationText, {
+          outputPath: path.join(workDir, 'voice.wav'),
+          language: settings.language,
+        }),
+      (cached) => fileExists(cached.audioFilePath),
     );
     await this.postRepository.update(post.id, { status: 'SOURCING_MEDIA' });
 
-    const sourcedMedia = await this.runStep(executionId, 'MEDIA', () =>
-      this.mediaSourcingService.sourceForScript(script, post.id, workDir),
+    const sourcedMedia = await this.runStep(
+      executionId,
+      'MEDIA',
+      () => this.mediaSourcingService.sourceForScript(script, post.id, workDir),
+      async (cached) => {
+        const checks = await Promise.all(cached.map((m) => fileExists(m.asset.localPath)));
+        return checks.every(Boolean);
+      },
     );
     await this.postRepository.update(post.id, { status: 'RENDERING' });
 
-    const subtitles = await this.runStep(executionId, 'SUBTITLES', () =>
-      this.subtitleGenerator.generate(
-        script.fullNarrationText,
-        voiceOver.durationSeconds,
-        path.join(workDir, 'subtitles.srt'),
-      ),
+    const subtitles = await this.runStep(
+      executionId,
+      'SUBTITLES',
+      () =>
+        this.subtitleGenerator.generate(
+          script.fullNarrationText,
+          voiceOver.durationSeconds,
+          path.join(workDir, 'subtitles.srt'),
+        ),
+      (cached) => fileExists(cached.srtFilePath),
     );
 
-    const renderedVideo = await this.runStep(executionId, 'COMPOSE_VIDEO', () =>
-      this.videoComposer.compose({
-        script,
-        voiceOver,
-        sourcedMedia,
-        subtitles,
-        outputPath: path.join(workDir, 'output.mp4'),
-        workDir,
-        backgroundMusicPath: this.backgroundMusicPath || undefined,
-      }),
+    const renderedVideo = await this.runStep(
+      executionId,
+      'COMPOSE_VIDEO',
+      () =>
+        this.videoComposer.compose({
+          script,
+          voiceOver,
+          sourcedMedia,
+          subtitles,
+          outputPath: path.join(workDir, 'output.mp4'),
+          workDir,
+          backgroundMusicPath: this.backgroundMusicPath || undefined,
+        }),
+      (cached) => fileExists(cached.filePath),
     );
 
     const video = await this.videoRepository.create(post.id, renderedVideo);
@@ -277,14 +295,21 @@ export class PipelineOrchestrator {
     executionId: string,
     stepName: PipelineStepName,
     fn: () => Promise<T>,
+    isCacheStillValid?: (cached: T) => Promise<boolean>,
   ): Promise<T> {
     const cached = await this.executionRepository.getCompletedStepOutput<T>(executionId, stepName);
     if (cached !== null) {
-      log.info(
+      if (!isCacheStillValid || (await isCacheStillValid(cached))) {
+        log.info(
+          { executionId, stepName },
+          'step already completed for this execution, reusing cached output',
+        );
+        return cached;
+      }
+      log.warn(
         { executionId, stepName },
-        'step already completed for this execution, reusing cached output',
+        'cached step output references files that no longer exist on disk (temp storage is ephemeral); re-running step',
       );
-      return cached;
     }
 
     await this.executionRepository.startStep(executionId, stepName, 1);
