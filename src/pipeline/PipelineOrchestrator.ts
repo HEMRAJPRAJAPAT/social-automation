@@ -27,6 +27,11 @@ const log = childLogger('pipeline-orchestrator');
 
 const TEMP_FILE_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48h — spec bonus: automatic temp cleanup
 
+// How long a RUNNING execution can go without any step activity before we
+// assume the process that owned it crashed (e.g. killed mid-deploy) and it's
+// safe to reclaim, rather than treating it as a live concurrent run.
+const RUNNING_STALE_THRESHOLD_MS = 15 * 60 * 1000;
+
 export interface PipelineRunSummary {
   executionId: string;
   status: 'SUCCEEDED' | 'FAILED' | 'SKIPPED_ALREADY_DONE';
@@ -80,6 +85,29 @@ export class PipelineOrchestrator {
         status: 'SKIPPED_ALREADY_DONE',
         postId: execution.postId ?? undefined,
       };
+    }
+
+    if (execution.status === 'RUNNING') {
+      const lastActivity = execution.steps.reduce(
+        (latest, step) => (step.startedAt > latest ? step.startedAt : latest),
+        execution.startedAt,
+      );
+      const staleMs = Date.now() - lastActivity.getTime();
+      if (staleMs < RUNNING_STALE_THRESHOLD_MS) {
+        log.warn(
+          { executionId: execution.id, settingId: settings.id, staleMs },
+          'execution is already RUNNING elsewhere (likely an overlapping process, e.g. a deploy in progress); skipping to avoid a concurrent run',
+        );
+        return {
+          executionId: execution.id,
+          status: 'SKIPPED_ALREADY_DONE',
+          postId: execution.postId ?? undefined,
+        };
+      }
+      log.warn(
+        { executionId: execution.id, settingId: settings.id, staleMs },
+        'execution has been stuck RUNNING with no activity past the staleness threshold; assuming the previous run crashed and reclaiming it',
+      );
     }
 
     const startedAt = new Date();
