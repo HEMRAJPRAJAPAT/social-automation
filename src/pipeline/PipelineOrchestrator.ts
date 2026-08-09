@@ -1,17 +1,13 @@
 import path from 'node:path';
 
 import type { CaptionGenerator } from '../ai/CaptionGenerator.js';
-import type { ContentEvaluator } from '../ai/ContentEvaluator.js';
 import type { HashtagGenerator } from '../ai/HashtagGenerator.js';
 import type { ResearchService } from '../ai/ResearchService.js';
-import type { ScriptFeedback, ScriptGenerator } from '../ai/ScriptGenerator.js';
+import type { ScriptGenerator } from '../ai/ScriptGenerator.js';
 import type { SubtitleGenerator } from '../ai/SubtitleGenerator.js';
-import type { VisualPlanner } from '../ai/VisualPlanner.js';
 import type { CaptionPackage } from '../entities/CaptionPackage.js';
-import type { EvaluationScores } from '../entities/ContentEvaluation.js';
 import type { ContentSettings } from '../entities/ContentSettings.js';
 import type { PipelineStepName } from '../entities/Execution.js';
-import type { Script } from '../entities/Script.js';
 import type { Topic } from '../entities/Topic.js';
 import type { IPublisher } from '../instagram/IPublisher.js';
 import type { TopicPlanner } from '../planner/TopicPlanner.js';
@@ -45,10 +41,9 @@ export interface PipelineRunSummary {
 }
 
 /**
- * Application-layer use case (see ARCHITECTURE.md §5) that runs the pipeline
- * end to end: plan topic → research → script (with a quality-scoring
- * regenerate loop) → voice → visual plan → media → subtitles → compose →
- * caption → hashtags → publish → persist.
+ * Application-layer use case (see ARCHITECTURE.md §5) that runs the 13-step
+ * pipeline from the spec end to end: plan → research → script → voice →
+ * media → subtitles → compose → caption → hashtags → publish → persist.
  *
  * Every step is wrapped by `runStep`, which persists its output to
  * `execution_steps` and skips re-running it if the same Execution already
@@ -65,9 +60,7 @@ export class PipelineOrchestrator {
     private readonly topicPlanner: TopicPlanner,
     private readonly researchService: ResearchService,
     private readonly scriptGenerator: ScriptGenerator,
-    private readonly contentEvaluator: ContentEvaluator,
     private readonly voiceProvider: IVoiceProvider,
-    private readonly visualPlanner: VisualPlanner,
     private readonly mediaSourcingService: IMediaSourcingService,
     private readonly subtitleGenerator: SubtitleGenerator,
     private readonly videoComposer: IVideoComposer,
@@ -76,7 +69,6 @@ export class PipelineOrchestrator {
     private readonly publisher: IPublisher,
     private readonly storageProvider: IStorageProvider,
     private readonly backgroundMusicPath: string | undefined,
-    private readonly fontFamily: string,
   ) {}
 
   async runForSetting(
@@ -187,10 +179,10 @@ export class PipelineOrchestrator {
     await this.postRepository.update(post.id, { status: 'SCRIPTING', researchJson: research });
 
     const recentHooks = await this.postRepository.recentCaptionHooks(20);
-    const { script, scores } = await this.runStep(executionId, 'SCRIPT', () =>
-      this.generateScriptWithQualityLoop(topic, research, settings, post.id, recentHooks),
+    const script = await this.runStep(executionId, 'SCRIPT', () =>
+      this.scriptGenerator.generate(topic, research, settings, post.id, recentHooks),
     );
-    await this.postRepository.update(post.id, { status: 'VOICING', script, qualityScore: scores });
+    await this.postRepository.update(post.id, { status: 'VOICING', script });
 
     const voiceOver = await this.runStep(
       executionId,
@@ -199,21 +191,15 @@ export class PipelineOrchestrator {
         this.voiceProvider.synthesize(script.fullNarrationText, {
           outputPath: path.join(workDir, 'voice.wav'),
           language: settings.language,
-          speed: settings.voiceSpeed,
-          style: settings.voiceStyle,
         }),
       (cached) => fileExists(cached.audioFilePath),
-    );
-
-    const visualPlan = await this.runStep(executionId, 'VISUAL_PLAN', () =>
-      this.visualPlanner.plan(script, topic, post.id),
     );
     await this.postRepository.update(post.id, { status: 'SOURCING_MEDIA' });
 
     const sourcedMedia = await this.runStep(
       executionId,
       'MEDIA',
-      () => this.mediaSourcingService.sourceForScript(script, visualPlan, post.id, workDir),
+      () => this.mediaSourcingService.sourceForScript(script, post.id, workDir),
       async (cached) => {
         const checks = await Promise.all(cached.map((m) => fileExists(m.asset.localPath)));
         return checks.every(Boolean);
@@ -228,10 +214,9 @@ export class PipelineOrchestrator {
         this.subtitleGenerator.generate(
           script.fullNarrationText,
           voiceOver.durationSeconds,
-          path.join(workDir, 'subtitles.ass'),
-          { fontFamily: this.fontFamily, stylePreset: settings.captionStylePreset },
+          path.join(workDir, 'subtitles.srt'),
         ),
-      (cached) => fileExists(cached.assFilePath),
+      (cached) => fileExists(cached.srtFilePath),
     );
 
     const renderedVideo = await this.runStep(
@@ -243,11 +228,9 @@ export class PipelineOrchestrator {
           voiceOver,
           sourcedMedia,
           subtitles,
-          visualPlan,
           outputPath: path.join(workDir, 'output.mp4'),
           workDir,
           backgroundMusicPath: this.backgroundMusicPath || undefined,
-          fontFamily: this.fontFamily,
         }),
       (cached) => fileExists(cached.filePath),
     );
@@ -292,56 +275,6 @@ export class PipelineOrchestrator {
     return { postId: post.id, instagramMediaId: publishResult.instagramMediaId };
   }
 
-  /**
-   * Generates a script, scores it with ContentEvaluator, and regenerates
-   * (feeding back the evaluator's critique) up to `qualityMaxRetries` times
-   * if it scores below `qualityThreshold`. Never blocks the Reel: after the
-   * last attempt it ships the best-scoring script seen, logging a warning —
-   * a daily-posting bot missing its slot is worse than a mediocre Reel.
-   */
-  private async generateScriptWithQualityLoop(
-    topic: Topic,
-    research: Awaited<ReturnType<ResearchService['research']>>,
-    settings: ContentSettings,
-    postId: string,
-    recentHooks: string[],
-  ): Promise<{ script: Script; scores: EvaluationScores }> {
-    let best: { script: Script; scores: EvaluationScores } | null = null;
-    let feedback: ScriptFeedback | undefined;
-
-    const attempts = settings.qualityMaxRetries + 1;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const candidate = await this.scriptGenerator.generate(
-        topic,
-        research,
-        settings,
-        postId,
-        recentHooks,
-        feedback,
-      );
-      const scores = await this.contentEvaluator.evaluate(candidate, topic, settings, postId);
-
-      if (!best || scores.overall > best.scores.overall) {
-        best = { script: candidate, scores };
-      }
-      if (scores.overall >= settings.qualityThreshold) {
-        return { script: candidate, scores };
-      }
-
-      log.warn(
-        { postId, attempt, overall: scores.overall, threshold: settings.qualityThreshold },
-        'script scored below quality threshold, regenerating with feedback',
-      );
-      feedback = { scores };
-    }
-
-    log.warn(
-      { postId, bestScore: best?.scores.overall },
-      'script quality still below threshold after all retries; shipping the best-scoring attempt',
-    );
-    return best!;
-  }
-
   private async publishVideo(
     localVideoPath: string,
     caption: CaptionPackage | { igTitle: string; captionText: string },
@@ -381,7 +314,6 @@ export class PipelineOrchestrator {
       status: 'RESEARCHING',
       researchJson: null,
       script: null,
-      qualityScore: null,
       captionText: null,
       igTitle: null,
       selectedVideoId: null,

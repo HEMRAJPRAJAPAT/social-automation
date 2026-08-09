@@ -18,12 +18,6 @@ function toDomain(row: PrismaTopic): Topic {
     plannedFor: row.plannedFor,
     usedAt: row.usedAt,
     createdAt: row.createdAt,
-    coreLesson: row.coreLesson,
-    visualIdea: row.visualIdea,
-    format: row.format as Topic['format'],
-    difficulty: row.difficulty as Topic['difficulty'],
-    audienceLevel: row.audienceLevel as Topic['audienceLevel'],
-    hookCategory: row.hookCategory as Topic['hookCategory'],
   };
 }
 
@@ -44,12 +38,6 @@ export class PrismaTopicRepository implements ITopicRepository {
         status: topic.status,
         plannedFor: topic.plannedFor,
         usedAt: topic.usedAt,
-        coreLesson: topic.coreLesson,
-        visualIdea: topic.visualIdea,
-        format: topic.format,
-        difficulty: topic.difficulty,
-        audienceLevel: topic.audienceLevel,
-        hookCategory: topic.hookCategory,
       },
     });
     return toDomain(row);

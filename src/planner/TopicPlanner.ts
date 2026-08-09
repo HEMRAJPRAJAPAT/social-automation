@@ -7,8 +7,6 @@ import type { ILlmProvider } from '../services/interfaces/ILlmProvider.js';
 import { childLogger } from '../utils/logger.js';
 import { isNearDuplicate, normalizeTitle, slugify } from '../utils/text.js';
 
-import { formatPromptHint, pickNextFormat } from './contentFormats.js';
-import { hookCategoryPromptHint, pickNextHookCategory } from './hookCategories.js';
 import { categoryPromptHint, pickNextCategory } from './topicCategories.js';
 
 const log = childLogger('topic-planner');
@@ -18,10 +16,6 @@ const topicIdeaSchema = z.object({
   hook: z.string().min(8).max(200),
   summary: z.string().min(20).max(600),
   keywords: z.array(z.string().min(2)).min(3).max(10),
-  /** The ONE concrete thing a viewer should be able to repeat back after watching. */
-  coreLesson: z.string().min(10).max(300),
-  /** A short, concrete visual concept — a real-world analogy or comparison the video can show. */
-  visualIdea: z.string().min(5).max(300),
 });
 
 type TopicIdea = z.infer<typeof topicIdeaSchema>;
@@ -52,25 +46,15 @@ export class TopicPlanner {
       return existing;
     }
 
-    const [existingTitles, lastCategory, recentTopics] = await Promise.all([
+    const [existingTitles, lastCategory] = await Promise.all([
       this.topicRepository.findAllTitles(settings.id),
       this.topicRepository.findLastCategory(settings.id),
-      this.topicRepository.findRecentBySetting(settings.id, 1),
     ]);
 
     const category = pickNextCategory(lastCategory);
-    const format = pickNextFormat(recentTopics[0]?.format ?? null);
-    const hookCategory = pickNextHookCategory(recentTopics[0]?.hookCategory ?? null);
     const recentTitles = existingTitles.slice(-HISTORY_WINDOW);
 
-    const idea = await this.generateUniqueIdea(
-      settings,
-      category,
-      format,
-      hookCategory,
-      recentTitles,
-      existingTitles,
-    );
+    const idea = await this.generateUniqueIdea(settings, category, recentTitles, existingTitles);
 
     const topic = await this.topicRepository.create({
       settingId: settings.id,
@@ -84,53 +68,31 @@ export class TopicPlanner {
       status: 'PLANNED',
       plannedFor: today,
       usedAt: null,
-      coreLesson: idea.coreLesson,
-      visualIdea: idea.visualIdea,
-      format,
-      difficulty: settings.audienceLevel,
-      audienceLevel: settings.audienceLevel,
-      hookCategory,
     });
 
-    log.info(
-      { topicId: topic.id, title: topic.title, category, format, hookCategory },
-      'planned new topic',
-    );
+    log.info({ topicId: topic.id, title: topic.title, category }, 'planned new topic');
     return topic;
   }
 
   private async generateUniqueIdea(
     settings: ContentSettings,
     category: (typeof TOPIC_CATEGORIES)[number],
-    format: Topic['format'],
-    hookCategory: Topic['hookCategory'],
     recentTitles: string[],
     allTitles: string[],
   ): Promise<TopicIdea> {
     let lastRejected: string[] = [];
 
     for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
-      const prompt = this.buildPrompt(settings, category, format, hookCategory, [
-        ...recentTitles,
-        ...lastRejected,
-      ]);
-      const raw = await this.llm.generateJson<unknown>(prompt, { purpose: 'TOPIC' });
-      const parsed = topicIdeaSchema.safeParse(raw);
+      const prompt = this.buildPrompt(settings, category, [...recentTitles, ...lastRejected]);
+      const idea = await this.llm.generateJson<TopicIdea>(prompt, { purpose: 'TOPIC' });
+      const parsed = topicIdeaSchema.parse(idea);
 
-      if (!parsed.success) {
-        log.error({ attempt, issues: parsed.error.issues, raw }, 'topic idea failed validation');
-        continue;
+      if (!isNearDuplicate(parsed.title, allTitles, SIMILARITY_THRESHOLD)) {
+        return parsed;
       }
 
-      if (!isNearDuplicate(parsed.data.title, allTitles, SIMILARITY_THRESHOLD)) {
-        return parsed.data;
-      }
-
-      log.warn(
-        { attempt, title: parsed.data.title },
-        'topic idea rejected as near-duplicate, retrying',
-      );
-      lastRejected = [...lastRejected, parsed.data.title];
+      log.warn({ attempt, title: parsed.title }, 'topic idea rejected as near-duplicate, retrying');
+      lastRejected = [...lastRejected, parsed.title];
     }
 
     throw new Error(
@@ -141,8 +103,6 @@ export class TopicPlanner {
   private buildPrompt(
     settings: ContentSettings,
     category: (typeof TOPIC_CATEGORIES)[number],
-    format: Topic['format'],
-    hookCategory: Topic['hookCategory'],
     excludeTitles: string[],
   ): string {
     const exclusionList =
@@ -153,38 +113,20 @@ export class TopicPlanner {
         : 'No topics have been published yet.';
 
     return `You are a content strategist for a daily Instagram Reels account in the niche "${settings.niche}".
-The audience skill level is: ${settings.audienceLevel}. Assume they are smart but have NO prior
-background in this specific topic unless it is truly common knowledge — never assume familiarity
-with jargon, acronyms, or advanced concepts.
-
 Today's content type must be: ${categoryPromptHint(category)}.
-Today's Reel structure/format is: ${formatPromptHint(format)}
-Today's opening hook style is: ${hookCategoryPromptHint(hookCategory)}
-
-What makes a topic land right now: pick something that feels current and relevant to developers
-following AI and programming trends — a tool, technique, or "wait, that's a thing?" moment people
-are actually talking about — not a generic, textbook-style topic. Do not fabricate specific recent
-news, dates, or version numbers you are not certain of; lean on genuinely useful, evergreen
-substance framed in a way that feels timely and worth stopping to watch.
 
 ${exclusionList}
 
-Come up with ONE brand-new, specific, non-generic topic idea for today's Reel. It must be:
-- Narrow enough to explain in ${settings.videoDurationSeconds} seconds
-- Reducible to exactly ONE core lesson — do not try to teach three things in one Reel
-- Genuinely useful and specific (not "learn about APIs" but "why your app re-fetches data it
-  already has, and the one-line fix")
-- Explainable with a concrete real-world analogy or comparison a total beginner would instantly get
-- Clearly different in substance (not just wording) from the excluded list above
+Come up with ONE brand-new, specific, non-generic topic idea for today's Reel. It must be
+narrow enough to explain in ${settings.videoDurationSeconds} seconds, genuinely useful to the
+audience, and clearly different in substance (not just wording) from the excluded list above.
 
 Respond with ONLY a JSON object, no markdown fences, matching exactly this shape:
 {
   "title": "string, a specific working title for the topic",
-  "hook": "string, a punchy one-sentence hook that could open the video, matching the hook style above",
+  "hook": "string, a punchy one-sentence hook that could open the video",
   "summary": "string, 2-3 sentences summarizing what the video will cover",
-  "keywords": ["array of 3-10 short search keywords related to the topic"],
-  "coreLesson": "string, the ONE specific thing a viewer should be able to repeat back after watching",
-  "visualIdea": "string, a concrete real-world analogy or comparison this Reel can visually show (e.g. 'a customer ordering from a waiter who relays the order to the kitchen')"
+  "keywords": ["array of 3-10 short search keywords related to the topic"]
 }`;
   }
 }

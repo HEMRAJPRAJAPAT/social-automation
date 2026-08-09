@@ -1,5 +1,4 @@
-export type PromptPurpose =
-  'TOPIC' | 'RESEARCH' | 'SCRIPT' | 'CAPTION' | 'HASHTAGS' | 'CONTENT_EVAL' | 'VISUAL_PLAN';
+export type PromptPurpose = 'TOPIC' | 'RESEARCH' | 'SCRIPT' | 'CAPTION' | 'HASHTAGS';
 
 export interface PromptHistoryEntry {
   postId?: string;

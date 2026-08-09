@@ -10,16 +10,13 @@ Architecture layering, ports & adapters, DI, resumability, retry strategy).
 Every scheduled run executes this pipeline (`src/pipeline/PipelineOrchestrator.ts`):
 
 ```
-plan topic → research → write script (+ quality-score/regenerate loop) → synthesize voice →
-plan visuals (stock vs. diagram) → source stock media → generate captions →
-compose video (FFmpeg) → write caption → generate hashtags →
+plan topic → research → write script → synthesize voice → source stock media →
+generate subtitles → compose video (FFmpeg) → write caption → generate hashtags →
 publish to Instagram → persist metadata
 ```
 
 Each step is checkpointed to the database, so a crash mid-run resumes from the first incomplete
-step on the next trigger instead of starting over or double-publishing. See
-[Content Generation](#content-generation) below for how the content itself — not just the
-pipeline plumbing — is designed to be beginner-friendly, varied, and visually engaging.
+step on the next trigger instead of starting over or double-publishing.
 
 ## Tech stack
 
@@ -84,9 +81,6 @@ and must be set). Everything else has a sensible default or is optional:
   won't crash the process — see `ARCHITECTURE.md` §5/§7).
 - `VOICE_PROVIDER` — `espeak` (default, free, offline) or `gemini` (requires `GEMINI_TTS_MODEL`
   and confirmed TTS access on your Gemini account).
-- `CONTENT_AUDIENCE_LEVEL`, `CONTENT_QUALITY_THRESHOLD`, `CONTENT_QUALITY_MAX_RETRIES`,
-  `CAPTION_STYLE_PRESET`, `VOICE_SPEED`, `VOICE_STYLE`, `VIDEO_FONT_FAMILY` — content-quality and
-  presentation knobs; see [Content Generation](#content-generation) for what each one controls.
 
 ## Running
 
@@ -165,8 +159,8 @@ Every external dependency (Gemini, Pexels, Pixabay, Instagram Graph API, ffmpeg/
 Prisma) sits behind an interface (`services/interfaces/*`, `instagram/IPublisher.ts`,
 `storage/IStorageProvider.ts`, `repositories/interfaces/*`), so unit tests inject hand-written
 fakes from `tests/mocks/fakes.ts` — no real network calls, no ffmpeg binary required, no live
-database. `PipelineOrchestrator.test.ts` exercises the full pipeline end to end against fakes,
-including a crash-and-resume scenario and a "never throws" failure-isolation scenario.
+database. `PipelineOrchestrator.test.ts` exercises the full 11-step pipeline end to end against
+fakes, including a crash-and-resume scenario and a "never throws" failure-isolation scenario.
 
 Current coverage is 90%+ statements/lines across everything with meaningful logic to test.
 Coverage intentionally **excludes** (see `vitest.config.ts` for the full list, each with a
@@ -206,115 +200,6 @@ Every external capability is a port defined as a TypeScript interface, with the 
 
 To add e.g. an ElevenLabs voice provider: implement `IVoiceProvider`, then change one
 constructor call in `container.ts`. Nothing else in the codebase needs to know.
-
-## Content Generation
-
-This section explains how a Reel actually gets *written* — the goal is that every Reel feels like
-a smart human creator explaining one clear idea to a beginner, not generic AI-generated filler.
-
-### How a Reel is created
-
-```
-Idea (TopicPlanner)
-  → Research (ResearchService)
-  → Script (ScriptGenerator, scored by ContentEvaluator, regenerated if weak)
-  → Voice (EspeakVoiceProvider / GeminiVoiceProvider)
-  → Visual Plan (VisualPlanner: which lines get stock footage vs. a diagram card)
-  → Media (MediaSourcingService sources stock clips for "stock" lines only)
-  → Captions (SubtitleGenerator: styled, karaoke-highlighted .ass)
-  → Video (VideoComposer: stock clips + diagram cards + captions + voice, via FFmpeg)
-  → Instagram (InstagramGraphPublisher)
-```
-
-Every LLM call in this chain is a separate, single-responsibility prompt (`TopicPlanner`,
-`ResearchService`, `ScriptGenerator`, `ContentEvaluator`, `VisualPlanner`, `CaptionGenerator`,
-`HashtagGenerator`) rather than one giant prompt — each receives only the structured context it
-needs (niche, audience level, format, hook category, research, recent hooks/topics to avoid) and
-its output is Zod-validated before anything downstream trusts it.
-
-### Content formats
-
-`TopicPlanner` rotates deterministically through 8 reusable Reel structures
-(`src/planner/contentFormats.ts`) so consecutive Reels don't all follow the same shape:
-`quick-tip`, `mistake`, `beginner-explanation`, `did-you-know`, `before-after`, `myth-reality`,
-`challenge`, `mini-story`. Each format comes with its own prompt hint describing the beats
-`ScriptGenerator` should hit (e.g. *Before vs After*: bad approach → why it's bad → better
-approach → result).
-
-### Beginner-friendly content
-
-Every `Topic` carries a `coreLesson` (the one specific thing a viewer should walk away knowing)
-and a `visualIdea` (a concrete real-world analogy). `ScriptGenerator`'s prompt requires:
-
-- One core lesson per Reel — never three things crammed into one video
-- Plain-language explanations the moment a technical term or acronym is first used
-- No documentation-speak: a banned-phrase list rejects "in this video", "let's dive in", "first of
-  all", "in conclusion", etc., in favor of natural transitions like "here's the interesting part"
-  or "think about it like this" (used sparingly, not as a crutch)
-- TTS-aware phrasing — acronyms are spelled the way they're actually spoken (e.g. "A P I") since
-  the script is read aloud, not displayed as text
-
-### Hook strategy
-
-`TopicPlanner` also rotates through 7 hook categories (`src/planner/hookCategories.ts`):
-curiosity, problem, mistake, challenge, surprise, story, question — each with example phrasing
-matching the category. This rotation is independent of (and layered on top of) the pre-existing
-hook-repetition guard: `ScriptGenerator` still checks every generated hook against recent posts'
-hooks via Jaccard similarity and regenerates on a near-duplicate, exactly as before.
-
-### Visual strategy
-
-`VisualPlanner` (LLM-based, `src/ai/VisualPlanner.ts`) decides per script line whether it should
-be illustrated with **stock footage** or a **diagram card** — a short animated text/box graphic
-rendered entirely with FFmpeg's `drawtext`/`drawbox` filters (no images, no new dependencies),
-used only for lines that explain a concept, comparison, or process more clearly as 2-3 labeled
-boxes than as generic b-roll. `MediaSourcingService` only searches stock footage for lines the
-plan marks `"stock"`; `VideoComposer.renderDiagramCard` renders the rest. If the planner's LLM
-call or its output fails validation, it fails open to an all-stock plan — a broken visual plan
-degrades the video, it never blocks the Reel.
-
-### Voice strategy
-
-`VOICE_SPEED` (`slow`/`normal`/`fast`) and `VOICE_STYLE` (free-text delivery hint) are threaded
-into both voice providers through the shared `IVoiceProvider` interface — `EspeakVoiceProvider`
-maps speed to its `-s` words-per-minute flag; `GeminiVoiceProvider` folds speed and style into its
-natural-language delivery instruction (Gemini's TTS performs an instruction like "say this warmly
-and at an upbeat pace" rather than reading it aloud — verified by comparing output duration against
-narration-only duration). Adding a new provider with different capabilities (e.g. real prosody
-control) only means implementing `IVoiceProvider`; providers that can't honor a hint simply ignore
-it rather than faking support.
-
-### Caption styles
-
-`SubtitleGenerator` burns in `.ass` (Advanced SubStation Alpha) subtitles instead of plain `.srt`,
-using the same word-level timing heuristic as before (`HeuristicSubtitleTimingStrategy`) but adding
-per-word `{\k}` karaoke tags so each word progressively highlights as it's spoken — a native ASS
-feature rendered by the same `subtitles=` FFmpeg filter, no new dependency. `CAPTION_STYLE_PRESET`
-selects between `bold-highlight` (large text, gold highlight as each word is spoken — the
-TikTok/Reels-native look) and `clean-white` (smaller, static, no karaoke pop); see
-`src/ai/captionStyles.ts` to add more presets — the karaoke/cue-building logic is fully decoupled
-from the style definition.
-
-### Content quality scoring
-
-`ContentEvaluator` (`src/ai/ContentEvaluator.ts`) scores every generated script 0-10 on
-`hookStrength`, `clarity`, `beginnerFriendliness`, `originality`, `visualFeasibility`, and `value`,
-plus an `overall` score and one sentence of improvement feedback. Inside the `SCRIPT` pipeline
-step, `PipelineOrchestrator` loops: generate → evaluate → if `overall` is below
-`CONTENT_QUALITY_THRESHOLD`, regenerate with the evaluator's feedback appended to the prompt, up to
-`CONTENT_QUALITY_MAX_RETRIES` times. It always ships the best-scoring attempt seen — a daily-posting
-bot silently skipping its slot over a quality gate would be worse than a mediocre Reel, so this is
-a quality *nudge*, not a hard block. If the evaluator's own LLM call or output ever fails, it fails
-open with a neutral passing score rather than blocking the pipeline.
-
-### Configuration
-
-All of the above is tunable via `.env` (see [.env.example](./.env.example) for defaults):
-`CONTENT_AUDIENCE_LEVEL`, `CONTENT_QUALITY_THRESHOLD`, `CONTENT_QUALITY_MAX_RETRIES`,
-`CAPTION_STYLE_PRESET`, `VOICE_SPEED`, `VOICE_STYLE`, `VIDEO_FONT_FAMILY`. These currently apply
-globally (read once at `container.bootstrap()` into the default `settings` row); per-niche
-overrides would mean setting them directly on that niche's `Setting` row instead — the columns
-already exist for that.
 
 ## Bonus features implemented
 

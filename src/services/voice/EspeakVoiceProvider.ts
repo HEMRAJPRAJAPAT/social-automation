@@ -22,13 +22,6 @@ const LANGUAGE_TO_VOICE: Record<string, string> = {
 
 const SAMPLE_RATE_HZ = 22050;
 
-/** Words-per-minute for espeak-ng's `-s` flag, per VOICE_SPEED setting. */
-const SPEED_TO_WPM: Record<'slow' | 'normal' | 'fast', number> = {
-  slow: 135,
-  normal: 165,
-  fast: 195,
-};
-
 function resolveVoice(language: string): string {
   return LANGUAGE_TO_VOICE[language.toLowerCase()] ?? language;
 }
@@ -66,7 +59,7 @@ export class EspeakVoiceProvider implements IVoiceProvider {
         '-v',
         resolveVoice(options.language),
         '-s',
-        String(SPEED_TO_WPM[options.speed ?? 'normal']),
+        '165', // words per minute, natural conversational pace
         '-p',
         '45', // pitch
         '-a',

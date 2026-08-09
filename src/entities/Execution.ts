@@ -3,7 +3,6 @@ export const PIPELINE_STEPS = [
   'RESEARCH',
   'SCRIPT',
   'VOICE',
-  'VISUAL_PLAN',
   'MEDIA',
   'SUBTITLES',
   'COMPOSE_VIDEO',

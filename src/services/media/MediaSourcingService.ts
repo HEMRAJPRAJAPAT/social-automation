@@ -6,7 +6,6 @@ import type {
   StockMediaAsset,
 } from '../../entities/MediaAsset.js';
 import type { Script } from '../../entities/Script.js';
-import type { VisualPlan } from '../../entities/VisualPlan.js';
 import type { IMediaAssetRepository } from '../../repositories/interfaces/IMediaAssetRepository.js';
 import { downloadToFile, ensureDir, sha256OfFile } from '../../utils/fs.js';
 import { childLogger } from '../../utils/logger.js';
@@ -38,28 +37,18 @@ export class MediaSourcingService implements IMediaSourcingService {
 
   async sourceForScript(
     script: Script,
-    visualPlan: VisualPlan,
     postId: string,
     workDir: string,
   ): Promise<SourcedMediaAsset[]> {
     const mediaDir = path.join(workDir, 'media');
     await ensureDir(mediaDir);
 
-    const sceneByLine = new Map(visualPlan.scenes.map((scene) => [scene.lineIndex, scene]));
-    const stockLines = script.lines.filter(
-      (line) => sceneByLine.get(line.index)?.type !== 'diagram',
-    );
-
     const usedChecksums = new Set(await this.mediaAssetRepository.findExistingChecksums());
     const usedProviderAssetIds = new Set<string>();
     const assets: SourcedMediaAsset[] = [];
 
-    for (const line of stockLines) {
-      const scene = sceneByLine.get(line.index);
-      const keyword =
-        (scene?.type === 'stock' ? scene.stockKeywords[0] : undefined) ||
-        line.visualKeyword ||
-        script.hook;
+    for (const line of script.lines) {
+      const keyword = line.visualKeyword || script.hook;
       const asset = await this.sourceOne(
         keyword,
         line.index,
@@ -80,7 +69,7 @@ export class MediaSourcingService implements IMediaSourcingService {
       assets.push({ lineIndex: line.index, asset });
     }
 
-    if (stockLines.length > 0 && assets.length === 0) {
+    if (assets.length === 0) {
       throw new Error(
         'MediaSourcingService could not source any usable stock media for this script',
       );

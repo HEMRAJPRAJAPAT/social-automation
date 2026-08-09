@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   countWords,
-  escapeFfmpegFilterValue,
   isNearDuplicate,
   jaccardSimilarity,
   normalizeTitle,
-  sanitizeDrawtextLabel,
   slugify,
   truncateWords,
 } from '../../../src/utils/text.js';
@@ -76,38 +74,5 @@ describe('countWords', () => {
 
   it('ignores extra whitespace', () => {
     expect(countWords('  one   two  ')).toBe(2);
-  });
-});
-
-describe('escapeFfmpegFilterValue', () => {
-  it('escapes an apostrophe using close-escape-reopen quoting, not a bare backslash', () => {
-    // Verified empirically: a bare `\'` silently breaks ffmpeg drawtext.
-    expect(escapeFfmpegFilterValue("User's Cache")).toBe("User'\\''s Cache");
-  });
-
-  it('escapes colons and percent signs', () => {
-    expect(escapeFfmpegFilterValue('a:b%c')).toBe('a\\:b\\%c');
-  });
-
-  it('leaves plain text untouched', () => {
-    expect(escapeFfmpegFilterValue('plain text')).toBe('plain text');
-  });
-});
-
-describe('sanitizeDrawtextLabel', () => {
-  it('strips characters outside the safe set', () => {
-    expect(sanitizeDrawtextLabel('50% faster: really!')).toBe('50 faster really!');
-  });
-
-  it('keeps apostrophes, hyphens, and basic punctuation', () => {
-    expect(sanitizeDrawtextLabel("It's a trade-off, right?")).toBe("It's a trade-off, right?");
-  });
-
-  it('truncates to the max word count and then the max length', () => {
-    const long = Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ');
-    const result = sanitizeDrawtextLabel(long, 200);
-    // truncateWords caps at 8 words, appending an ellipsis to the last one.
-    expect(result.split(' ')).toHaveLength(8);
-    expect(result.endsWith('…')).toBe(true);
   });
 });

@@ -28,8 +28,6 @@ describe('TopicPlanner.planForToday', () => {
       hook: 'Ever wondered how to test this?',
       summary: 'A summary that is long enough to pass validation checks easily.',
       keywords: ['testing', 'vitest', 'typescript'],
-      coreLesson: 'The one thing viewers should remember about testing.',
-      visualIdea: 'A simple real-world analogy for testing.',
     });
 
     const topicRepository = makeFakeTopicRepository({
@@ -53,16 +51,12 @@ describe('TopicPlanner.planForToday', () => {
       hook: 'Hook one',
       summary: 'A summary that is long enough to pass validation checks easily.',
       keywords: ['react', 'hooks', 'javascript'],
-      coreLesson: 'The one thing viewers should remember about hooks.',
-      visualIdea: 'A simple real-world analogy for hooks.',
     });
     llm.enqueueJson({
       title: 'Docker Compose for Absolute Beginners',
       hook: 'Hook two',
       summary: 'A totally different summary that is long enough to pass validation.',
       keywords: ['docker', 'compose', 'containers'],
-      coreLesson: 'The one thing viewers should remember about Docker Compose.',
-      visualIdea: 'A simple real-world analogy for Docker Compose.',
     });
 
     const topicRepository = makeFakeTopicRepository({
@@ -86,8 +80,6 @@ describe('TopicPlanner.planForToday', () => {
         hook: `Hook number ${i} for this attempt`,
         summary: 'A summary that is long enough to pass validation checks easily.',
         keywords: ['react', 'hooks', 'javascript'],
-        coreLesson: 'The one thing viewers should remember about hooks.',
-        visualIdea: 'A simple real-world analogy for hooks.',
       });
     }
 
@@ -99,34 +91,5 @@ describe('TopicPlanner.planForToday', () => {
 
     const planner = new TopicPlanner(llm, topicRepository);
     await expect(planner.planForToday(settings, today)).rejects.toThrow(/unique topic/i);
-  });
-
-  it('rotates content format and hook category based on the most recent topic', async () => {
-    const llm = new FakeLlmProvider();
-    llm.enqueueJson({
-      title: 'Another Brand New Topic',
-      hook: 'A fresh hook',
-      summary: 'A summary that is long enough to pass validation checks easily.',
-      keywords: ['one', 'two', 'three'],
-      coreLesson: 'The one thing viewers should remember.',
-      visualIdea: 'A simple real-world analogy.',
-    });
-
-    const topicRepository = makeFakeTopicRepository({
-      findPlannedForDate: async () => null,
-      findAllTitles: async () => [],
-      findLastCategory: async () => null,
-      findRecentBySetting: async () => [
-        makeTopic({ format: 'quick-tip', hookCategory: 'problem' }),
-      ],
-    });
-
-    const planner = new TopicPlanner(llm, topicRepository);
-    const result = await planner.planForToday(settings, today);
-
-    // 'quick-tip' is followed by 'mistake' in CONTENT_FORMATS; 'problem' is
-    // followed by 'mistake' in HOOK_CATEGORIES — both rotate forward by one.
-    expect(result.format).toBe('mistake');
-    expect(result.hookCategory).toBe('mistake');
   });
 });

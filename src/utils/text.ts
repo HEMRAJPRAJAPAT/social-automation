@@ -51,36 +51,3 @@ export function truncateWords(input: string, maxWords: number): string {
 export function countWords(input: string): number {
   return input.trim().split(/\s+/).filter(Boolean).length;
 }
-
-/**
- * Escapes a value for safe interpolation into an ffmpeg filtergraph string
- * (e.g. inside `drawtext=text='...'` or `subtitles='...'`), where the value
- * itself is wrapped in single quotes by the caller. FFmpeg's single-quoted
- * values follow shell-style quoting, NOT backslash-escaping: a literal `'`
- * must close the quote, emit an escaped quote, and reopen (`'\''`) — a bare
- * `\'` does NOT work and corrupts the rest of the filtergraph (verified:
- * this broke drawtext on a label containing an apostrophe). `:` and `%`
- * still need backslash-escaping since they're active even inside quotes.
- */
-export function escapeFfmpegFilterValue(raw: string): string {
-  return raw
-    .replace(/\\/g, '\\\\')
-    .replace(/:/g, '\\:')
-    .replace(/%/g, '\\%')
-    .replace(/'/g, "'\\''");
-}
-
-/**
- * Diagram-card labels come from LLM output and get burned in via
- * `drawtext`, so they're stripped to a safe character set server-side
- * rather than relying purely on escaping — a stray unescapable character
- * would otherwise break the whole ffmpeg filtergraph mid-render.
- */
-export function sanitizeDrawtextLabel(raw: string, maxLength = 40): string {
-  const cleaned = raw
-    .normalize('NFKD')
-    .replace(/[^\p{L}\p{N} '\-.,?!]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return truncateWords(cleaned, 8).slice(0, maxLength);
-}

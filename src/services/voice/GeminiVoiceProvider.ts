@@ -20,26 +20,15 @@ const GEMINI_TTS_BIT_DEPTH = 16;
 // which reads flatter/more neutral) — https://ai.google.dev/gemini-api/docs/speech-generation#voices
 const VOICE_NAME = 'Sulafat';
 
-const SPEED_HINT: Record<'slow' | 'normal' | 'fast', string> = {
-  slow: 'at a relaxed, slightly slower pace so every word is easy to follow',
-  normal: 'at a natural conversational pace',
-  fast: 'at an upbeat, energetic pace',
-};
-
 // Gemini's native TTS models accept a natural-language delivery instruction
 // ahead of the text and perform it rather than reading it aloud (verified:
 // output duration matches the narration alone, not instruction+narration).
 // This is what pushes the read from "correct" to "warm and engaging".
-function buildStyledPrompt(
-  text: string,
-  speed: 'slow' | 'normal' | 'fast',
-  style: string | null | undefined,
-): string {
-  const extra = style ? ` ${style}.` : '';
+function buildStyledPrompt(text: string): string {
   return (
     'Say the following warmly, naturally, and with engaging conversational ' +
     'energy, like a friendly expert sharing something interesting with a ' +
-    `friend — clear pronunciation, ${SPEED_HINT[speed]}, no monotone.${extra} Text: ${text}`
+    `friend — clear pronunciation, natural pacing, no monotone: ${text}`
   );
 }
 
@@ -84,13 +73,7 @@ export class GeminiVoiceProvider implements IVoiceProvider {
           const result = await axios.post<GeminiTtsResponse>(
             `${endpoint}?key=${this.apiKey}`,
             {
-              contents: [
-                {
-                  parts: [
-                    { text: buildStyledPrompt(text, options.speed ?? 'normal', options.style) },
-                  ],
-                },
-              ],
+              contents: [{ parts: [{ text: buildStyledPrompt(text) }] }],
               generationConfig: {
                 responseModalities: ['AUDIO'],
                 speechConfig: {

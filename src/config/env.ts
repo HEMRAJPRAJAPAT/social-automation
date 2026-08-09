@@ -11,9 +11,7 @@ const booleanFromString = z
 const booleanFromStringDefaultTrue = z
   .string()
   .optional()
-  .transform(
-    (value) => value === undefined || value.trim() === '' || value.toLowerCase() === 'true',
-  );
+  .transform((value) => value === undefined || value.trim() === '' || value.toLowerCase() === 'true');
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -31,15 +29,6 @@ const envSchema = z.object({
   CONTENT_POSTING_FREQUENCY: z.string().default('daily'),
   CONTENT_VIDEO_DURATION_SECONDS: z.coerce.number().int().min(15).max(90).default(45),
   CONTENT_WRITING_STYLE: z.string().default('friendly, concise, expert but approachable'),
-  CONTENT_AUDIENCE_LEVEL: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
-  CONTENT_QUALITY_THRESHOLD: z.coerce.number().min(0).max(10).default(7),
-  CONTENT_QUALITY_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
-  CAPTION_STYLE_PRESET: z.enum(['bold-highlight', 'clean-white']).default('bold-highlight'),
-  VOICE_SPEED: z.enum(['slow', 'normal', 'fast']).default('normal'),
-  /** Free-text delivery hint passed to voice providers that support it (e.g. Gemini TTS). */
-  VOICE_STYLE: z.string().optional().default(''),
-  /** Fontconfig family name used for burned-in captions and diagram-card text. */
-  VIDEO_FONT_FAMILY: z.string().default('DejaVu Sans'),
 
   GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),
   GEMINI_TEXT_MODEL: z.string().default('gemini-flash-latest'),
@@ -90,10 +79,4 @@ export const contentDefaults = {
   writingStyle: env.CONTENT_WRITING_STYLE,
   cronExpression: env.CRON,
   timezone: env.TIMEZONE,
-  audienceLevel: env.CONTENT_AUDIENCE_LEVEL,
-  qualityThreshold: env.CONTENT_QUALITY_THRESHOLD,
-  qualityMaxRetries: env.CONTENT_QUALITY_MAX_RETRIES,
-  captionStylePreset: env.CAPTION_STYLE_PRESET,
-  voiceSpeed: env.VOICE_SPEED,
-  voiceStyle: env.VOICE_STYLE || null,
 } as const;

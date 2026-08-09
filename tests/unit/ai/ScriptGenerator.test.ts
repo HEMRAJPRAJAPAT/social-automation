@@ -56,29 +56,6 @@ describe('ScriptGenerator', () => {
     expect(llm.calls).toHaveLength(2);
   });
 
-  it('includes the evaluator feedback in the prompt when regenerating after a low score', async () => {
-    const llm = new FakeLlmProvider();
-    llm.enqueueJson(validScript('A hook nobody has heard before'));
-
-    const generator = new ScriptGenerator(llm);
-    await generator.generate(topic, research, settings, 'post-1', [], {
-      scores: {
-        hookStrength: 3,
-        clarity: 3,
-        beginnerFriendliness: 3,
-        originality: 3,
-        visualFeasibility: 3,
-        value: 3,
-        overall: 3,
-        improvementNotes: 'Too much unexplained jargon in the second line.',
-      },
-    });
-
-    expect(llm.calls).toHaveLength(1);
-    expect(llm.calls[0]!.prompt).toContain('Too much unexplained jargon in the second line.');
-    expect(llm.calls[0]!.prompt).toContain('scored 3/10');
-  });
-
   it('throws when no fresh hook can be generated after all retries', async () => {
     const llm = new FakeLlmProvider();
     for (let i = 0; i < 3; i++) {
