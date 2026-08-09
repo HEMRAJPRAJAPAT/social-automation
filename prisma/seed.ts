@@ -21,6 +21,12 @@ async function main(): Promise<void> {
     timezone: contentDefaults.timezone,
     isActive: true,
     envPrefix: null,
+    audienceLevel: contentDefaults.audienceLevel,
+    qualityThreshold: contentDefaults.qualityThreshold,
+    qualityMaxRetries: contentDefaults.qualityMaxRetries,
+    captionStylePreset: contentDefaults.captionStylePreset,
+    voiceSpeed: contentDefaults.voiceSpeed,
+    voiceStyle: contentDefaults.voiceStyle,
   });
 
   // eslint-disable-next-line no-console -- seed scripts report to stdout, not through pino

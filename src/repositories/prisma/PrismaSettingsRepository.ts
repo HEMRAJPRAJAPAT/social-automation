@@ -16,6 +16,12 @@ function toDomain(row: Setting): ContentSettings {
     timezone: row.timezone,
     isActive: row.isActive,
     envPrefix: row.envPrefix,
+    audienceLevel: row.audienceLevel as ContentSettings['audienceLevel'],
+    qualityThreshold: row.qualityThreshold,
+    qualityMaxRetries: row.qualityMaxRetries,
+    captionStylePreset: row.captionStylePreset,
+    voiceSpeed: row.voiceSpeed as ContentSettings['voiceSpeed'],
+    voiceStyle: row.voiceStyle,
   };
 }
 
@@ -46,6 +52,12 @@ export class PrismaSettingsRepository implements ISettingsRepository {
         timezone: defaults.timezone,
         isActive: defaults.isActive,
         envPrefix: defaults.envPrefix,
+        audienceLevel: defaults.audienceLevel,
+        qualityThreshold: defaults.qualityThreshold,
+        qualityMaxRetries: defaults.qualityMaxRetries,
+        captionStylePreset: defaults.captionStylePreset,
+        voiceSpeed: defaults.voiceSpeed,
+        voiceStyle: defaults.voiceStyle,
       },
       update: {
         niche: defaults.niche,
@@ -55,6 +67,12 @@ export class PrismaSettingsRepository implements ISettingsRepository {
         writingStyle: defaults.writingStyle,
         cronExpression: defaults.cronExpression,
         timezone: defaults.timezone,
+        audienceLevel: defaults.audienceLevel,
+        qualityThreshold: defaults.qualityThreshold,
+        qualityMaxRetries: defaults.qualityMaxRetries,
+        captionStylePreset: defaults.captionStylePreset,
+        voiceSpeed: defaults.voiceSpeed,
+        voiceStyle: defaults.voiceStyle,
       },
     });
     return toDomain(row);

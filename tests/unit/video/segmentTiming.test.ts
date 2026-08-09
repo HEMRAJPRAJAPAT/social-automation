@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Script } from '../../../src/entities/Script.js';
 import type { WordTiming } from '../../../src/entities/Subtitle.js';
+import type { VisualPlan } from '../../../src/entities/VisualPlan.js';
 import { alignMediaToSegments, computeSegmentTimings } from '../../../src/video/segmentTiming.js';
 
 function makeWordTimings(words: string[], secondsPerWord = 1): WordTiming[] {
@@ -10,6 +11,16 @@ function makeWordTimings(words: string[], secondsPerWord = 1): WordTiming[] {
     startSeconds: i * secondsPerWord,
     endSeconds: (i + 1) * secondsPerWord,
   }));
+}
+
+function allStockPlan(lineIndexes: number[]): VisualPlan {
+  return {
+    scenes: lineIndexes.map((lineIndex) => ({
+      lineIndex,
+      type: 'stock' as const,
+      stockKeywords: ['test'],
+    })),
+  };
 }
 
 const script: Script = {
@@ -56,9 +67,10 @@ describe('alignMediaToSegments', () => {
       { lineIndex: 1, asset: { localPath: '/b.mp4' } as never },
     ];
 
-    const aligned = alignMediaToSegments(segments, sourced);
+    const aligned = alignMediaToSegments(segments, sourced, allStockPlan([0, 1]));
     expect(aligned).toHaveLength(2);
-    expect(aligned[0]!.asset.localPath).toBe('/a.mp4');
+    expect(aligned[0]!.kind).toBe('stock');
+    expect(aligned[0]!.kind === 'stock' && aligned[0]!.asset.localPath).toBe('/a.mp4');
     expect(aligned[1]!.startSeconds).toBe(5);
     expect(aligned[1]!.endSeconds).toBe(10);
   });
@@ -75,7 +87,7 @@ describe('alignMediaToSegments', () => {
       { lineIndex: 2, asset: { localPath: '/c.mp4' } as never },
     ];
 
-    const aligned = alignMediaToSegments(segments, sourced);
+    const aligned = alignMediaToSegments(segments, sourced, allStockPlan([0, 1, 2]));
     expect(aligned).toHaveLength(2);
     expect(aligned[0]!.startSeconds).toBe(0);
     expect(aligned[0]!.endSeconds).toBe(5);
@@ -91,8 +103,32 @@ describe('alignMediaToSegments', () => {
     ];
     const sourced = [{ lineIndex: 0, asset: { localPath: '/a.mp4' } as never }];
 
-    const aligned = alignMediaToSegments(segments, sourced);
+    const aligned = alignMediaToSegments(segments, sourced, allStockPlan([0, 1]));
     expect(aligned).toHaveLength(1);
     expect(aligned[0]!.endSeconds).toBe(10);
+  });
+
+  it('always renders a diagram-type line as its own segment, even though it has no sourced media', () => {
+    const segments = [
+      { lineIndex: 0, startSeconds: 0, endSeconds: 5 },
+      { lineIndex: 1, startSeconds: 5, endSeconds: 10 },
+    ];
+    const sourced = [{ lineIndex: 0, asset: { localPath: '/a.mp4' } as never }];
+    const visualPlan: VisualPlan = {
+      scenes: [
+        { lineIndex: 0, type: 'stock', stockKeywords: ['test'] },
+        {
+          lineIndex: 1,
+          type: 'diagram',
+          diagramSpec: { title: 'How it works', boxes: [{ label: 'A' }, { label: 'B' }], layout: 'vertical-flow' },
+        },
+      ],
+    };
+
+    const aligned = alignMediaToSegments(segments, sourced, visualPlan);
+    expect(aligned).toHaveLength(2);
+    expect(aligned[1]!.kind).toBe('diagram');
+    expect(aligned[1]!.startSeconds).toBe(5);
+    expect(aligned[1]!.endSeconds).toBe(10);
   });
 });

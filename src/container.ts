@@ -1,9 +1,11 @@
 import { CaptionGenerator } from './ai/CaptionGenerator.js';
+import { ContentEvaluator } from './ai/ContentEvaluator.js';
 import { HashtagGenerator } from './ai/HashtagGenerator.js';
 import { HeuristicSubtitleTimingStrategy } from './ai/HeuristicSubtitleTimingStrategy.js';
 import { ResearchService } from './ai/ResearchService.js';
 import { ScriptGenerator } from './ai/ScriptGenerator.js';
 import { SubtitleGenerator } from './ai/SubtitleGenerator.js';
+import { VisualPlanner } from './ai/VisualPlanner.js';
 import { env, contentDefaults } from './config/env.js';
 import { prisma } from './db/prisma.js';
 import type { ContentSettings } from './entities/ContentSettings.js';
@@ -111,6 +113,8 @@ export class AppContainer {
   public readonly topicPlanner = new TopicPlanner(this.llmProvider, this.topicRepository);
   public readonly researchService = new ResearchService(this.llmProvider);
   public readonly scriptGenerator = new ScriptGenerator(this.llmProvider);
+  public readonly contentEvaluator = new ContentEvaluator(this.llmProvider);
+  public readonly visualPlanner = new VisualPlanner(this.llmProvider);
   public readonly captionGenerator = new CaptionGenerator(this.llmProvider);
   public readonly hashtagGenerator = new HashtagGenerator(this.llmProvider);
   public readonly subtitleGenerator = new SubtitleGenerator(new HeuristicSubtitleTimingStrategy());
@@ -125,7 +129,9 @@ export class AppContainer {
     this.topicPlanner,
     this.researchService,
     this.scriptGenerator,
+    this.contentEvaluator,
     this.voiceProvider,
+    this.visualPlanner,
     this.mediaSourcingService,
     this.subtitleGenerator,
     this.videoComposer,
@@ -134,6 +140,7 @@ export class AppContainer {
     this.publisher,
     this.storageProvider,
     env.BACKGROUND_MUSIC_PATH || undefined,
+    env.VIDEO_FONT_FAMILY,
   );
 
   async bootstrap(): Promise<ContentSettings> {
@@ -149,6 +156,12 @@ export class AppContainer {
       timezone: contentDefaults.timezone,
       isActive: true,
       envPrefix: null,
+      audienceLevel: contentDefaults.audienceLevel,
+      qualityThreshold: contentDefaults.qualityThreshold,
+      qualityMaxRetries: contentDefaults.qualityMaxRetries,
+      captionStylePreset: contentDefaults.captionStylePreset,
+      voiceSpeed: contentDefaults.voiceSpeed,
+      voiceStyle: contentDefaults.voiceStyle,
     });
   }
 

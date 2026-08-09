@@ -14,16 +14,16 @@ const log = childLogger('null-publisher');
 export class NullPublisher implements IPublisher {
   public readonly platform = 'instagram-dry-run';
 
-  async publishReel(input: PublishReelInput): Promise<PublishResult> {
+  publishReel(input: PublishReelInput): Promise<PublishResult> {
     log.info(
       { videoUrl: input.videoUrl },
       'PUBLISH_ENABLED=false — skipping Instagram upload; Reel is available locally at videoUrl',
     );
-    return {
+    return Promise.resolve({
       instagramContainerId: 'dry-run',
       instagramMediaId: 'dry-run',
       instagramPermalink: input.videoUrl,
       publishedAt: new Date(),
-    };
+    });
   }
 }

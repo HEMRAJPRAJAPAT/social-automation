@@ -82,6 +82,8 @@ enum PromptPurpose {
   SCRIPT
   CAPTION
   HASHTAGS
+  CONTENT_EVAL
+  VISUAL_PLAN
 }
 
 enum SchedulerJobStatus {
@@ -109,6 +111,12 @@ model Setting {
   timezone             String   @default("UTC")
   isActive             Boolean  @default(true)
   envPrefix            String? // e.g. "MAIN" -> MAIN_INSTAGRAM_ACCESS_TOKEN, for multi-account setups
+  audienceLevel        String   @default("beginner") // 'beginner' | 'intermediate' | 'advanced' — see src/entities/Topic.ts
+  qualityThreshold     Float    @default(7.0) // 0-10, see ContentEvaluator
+  qualityMaxRetries    Int      @default(2)
+  captionStylePreset   String   @default("bold-highlight") // see src/ai/captionStyles.ts
+  voiceSpeed           String   @default("normal") // 'slow' | 'normal' | 'fast'
+  voiceStyle           String? // free-text delivery hint, e.g. "upbeat and energetic"
   metadata             Json?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -136,6 +144,15 @@ model Topic {
   plannedFor      DateTime
   usedAt          DateTime?
   createdAt       DateTime      @default(now())
+  // Editorial metadata (see src/entities/Topic.ts) — plain strings validated
+  // by Zod at the app layer rather than DB enums, since this content
+  // taxonomy is expected to evolve without needing a migration each time.
+  format          String        @default("beginner-explanation")
+  difficulty      String        @default("beginner")
+  audienceLevel   String        @default("beginner")
+  hookCategory    String        @default("curiosity")
+  coreLesson      String        @default("")
+  visualIdea      String        @default("")
 
   posts Post[]
 
@@ -157,6 +174,7 @@ model Post {
   captionText          String?
   hashtags             String[]
   igTitle              String?
+  qualityScore         Json? // ContentEvaluator score breakdown for the script that shipped
   selectedVideoId      String?    @unique
   instagramMediaId     String?
   instagramContainerId String?

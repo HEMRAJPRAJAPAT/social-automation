@@ -10,6 +10,7 @@ const { MediaSourcingService } = await import('../../../src/services/media/Media
 const { makeFakeMediaAssetRepository, makeFakeMediaProvider } = await import('../../mocks/fakes.js');
 import type { MediaSearchResult } from '../../../src/entities/MediaAsset.js';
 import type { Script } from '../../../src/entities/Script.js';
+import type { VisualPlan } from '../../../src/entities/VisualPlan.js';
 
 const script: Script = {
   hook: 'hook',
@@ -22,6 +23,16 @@ const script: Script = {
   estimatedDurationSeconds: 10,
   language: 'en',
 };
+
+function allStockPlan(script: Script): VisualPlan {
+  return {
+    scenes: script.lines.map((line) => ({
+      lineIndex: line.index,
+      type: 'stock' as const,
+      stockKeywords: [line.visualKeyword],
+    })),
+  };
+}
 
 function videoResult(providerAssetId: string, query: string): MediaSearchResult {
   return {
@@ -46,7 +57,7 @@ describe('MediaSourcingService', () => {
     const mediaAssetRepository = makeFakeMediaAssetRepository();
     const service = new MediaSourcingService([pexels], mediaAssetRepository);
 
-    const sourced = await service.sourceForScript(script, 'post-1', '/tmp/work');
+    const sourced = await service.sourceForScript(script, allStockPlan(script), 'post-1', '/tmp/work');
 
     expect(sourced).toHaveLength(2);
     expect(sourced[0]!.lineIndex).toBe(0);
@@ -60,7 +71,7 @@ describe('MediaSourcingService', () => {
     const mediaAssetRepository = makeFakeMediaAssetRepository();
     const service = new MediaSourcingService([pexels, pixabay], mediaAssetRepository);
 
-    const sourced = await service.sourceForScript(script, 'post-1', '/tmp/work');
+    const sourced = await service.sourceForScript(script, allStockPlan(script), 'post-1', '/tmp/work');
 
     expect(sourced.length).toBeGreaterThan(0);
     expect(pixabay.searchVideos).toHaveBeenCalled();
@@ -86,7 +97,12 @@ describe('MediaSourcingService', () => {
     const singleLineScript: Script = { ...script, lines: [script.lines[0]!] };
     const service = new MediaSourcingService([imageOnlyProvider], makeFakeMediaAssetRepository());
 
-    const sourced = await service.sourceForScript(singleLineScript, 'post-1', '/tmp/work');
+    const sourced = await service.sourceForScript(
+      singleLineScript,
+      allStockPlan(singleLineScript),
+      'post-1',
+      '/tmp/work',
+    );
 
     expect(sourced).toHaveLength(1);
     expect(sourced[0]!.asset.type).toBe('IMAGE');
@@ -96,8 +112,25 @@ describe('MediaSourcingService', () => {
     const pexels = makeFakeMediaProvider('PEXELS', []);
     const service = new MediaSourcingService([pexels], makeFakeMediaAssetRepository());
 
-    await expect(service.sourceForScript(script, 'post-1', '/tmp/work')).rejects.toThrow(
-      /could not source any usable stock media/i,
-    );
+    await expect(
+      service.sourceForScript(script, allStockPlan(script), 'post-1', '/tmp/work'),
+    ).rejects.toThrow(/could not source any usable stock media/i);
+  });
+
+  it('skips lines the visual plan marked as diagrams, and does not throw if only diagrams remain', async () => {
+    const pexels = makeFakeMediaProvider('PEXELS', []);
+    const service = new MediaSourcingService([pexels], makeFakeMediaAssetRepository());
+    const allDiagramPlan: VisualPlan = {
+      scenes: script.lines.map((line) => ({
+        lineIndex: line.index,
+        type: 'diagram' as const,
+        diagramSpec: { title: 'title', boxes: [{ label: 'A' }, { label: 'B' }], layout: 'vertical-flow' as const },
+      })),
+    };
+
+    const sourced = await service.sourceForScript(script, allDiagramPlan, 'post-1', '/tmp/work');
+
+    expect(sourced).toHaveLength(0);
+    expect(pexels.searchVideos).not.toHaveBeenCalled();
   });
 });

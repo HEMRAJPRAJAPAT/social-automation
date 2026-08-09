@@ -1,5 +1,6 @@
 import type { Post as PrismaPost, Prisma, PrismaClient } from '@prisma/client';
 
+import type { EvaluationScores } from '../../entities/ContentEvaluation.js';
 import type { NewPost, Post, PostStatus } from '../../entities/Post.js';
 import type { ResearchResult } from '../../entities/ResearchResult.js';
 import type { Script } from '../../entities/Script.js';
@@ -13,6 +14,7 @@ function toDomain(row: PrismaPost): Post {
     status: row.status,
     researchJson: row.researchJson as unknown as ResearchResult | null,
     script: row.script as unknown as Script | null,
+    qualityScore: row.qualityScore as unknown as EvaluationScores | null,
     captionText: row.captionText,
     hashtags: row.hashtags,
     igTitle: row.igTitle,
@@ -39,6 +41,7 @@ export class PrismaPostRepository implements IPostRepository {
         status: post.status,
         researchJson: post.researchJson as unknown as Prisma.InputJsonValue,
         script: post.script as unknown as Prisma.InputJsonValue,
+        qualityScore: post.qualityScore as unknown as Prisma.InputJsonValue,
         captionText: post.captionText,
         hashtags: post.hashtags ?? [],
         igTitle: post.igTitle,
@@ -67,6 +70,9 @@ export class PrismaPostRepository implements IPostRepository {
           : {}),
         ...(patch.script !== undefined
           ? { script: patch.script as unknown as Prisma.InputJsonValue }
+          : {}),
+        ...(patch.qualityScore !== undefined
+          ? { qualityScore: patch.qualityScore as unknown as Prisma.InputJsonValue }
           : {}),
         ...(patch.captionText !== undefined ? { captionText: patch.captionText } : {}),
         ...(patch.hashtags !== undefined ? { hashtags: patch.hashtags } : {}),

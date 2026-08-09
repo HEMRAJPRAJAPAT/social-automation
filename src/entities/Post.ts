@@ -1,3 +1,4 @@
+import type { EvaluationScores } from './ContentEvaluation.js';
 import type { ResearchResult } from './ResearchResult.js';
 import type { Script } from './Script.js';
 
@@ -20,6 +21,7 @@ export interface Post {
   status: PostStatus;
   researchJson: ResearchResult | null;
   script: Script | null;
+  qualityScore: EvaluationScores | null;
   captionText: string | null;
   hashtags: string[];
   igTitle: string | null;
