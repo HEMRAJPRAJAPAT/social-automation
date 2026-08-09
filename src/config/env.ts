@@ -8,6 +8,11 @@ const booleanFromString = z
   .optional()
   .transform((value) => value?.toLowerCase() === 'true');
 
+const booleanFromStringDefaultTrue = z
+  .string()
+  .optional()
+  .transform((value) => value === undefined || value.trim() === '' || value.toLowerCase() === 'true');
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -36,6 +41,8 @@ const envSchema = z.object({
   PAGE_ID: z.string().optional().default(''),
   BUSINESS_ACCOUNT_ID: z.string().optional().default(''),
   INSTAGRAM_GRAPH_API_VERSION: z.string().default('v20.0'),
+  /** Set to "false" to skip the real Instagram upload and just render the Reel locally. */
+  PUBLISH_ENABLED: booleanFromStringDefaultTrue,
 
   STORAGE_PROVIDER: z.enum(['local']).default('local'),
   STORAGE_ROOT: z.string().default('./storage'),

@@ -272,6 +272,19 @@ export class FakeExecutionRepository implements IExecutionRepository {
     return { ...this.execution, steps: [...this.steps.values()] };
   }
 
+  async deleteForToday(): Promise<void> {
+    this.steps.clear();
+    this.execution = {
+      ...this.execution,
+      postId: null,
+      status: 'PENDING',
+      currentStep: null,
+      errorMessage: null,
+      finishedAt: null,
+      steps: [],
+    };
+  }
+
   async setStatus(
     _executionId: string,
     status: Execution['status'],

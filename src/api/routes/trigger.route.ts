@@ -6,14 +6,20 @@ import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger('trigger-route');
 
-const triggerBodySchema = z.object({ settingKey: z.string().optional() });
+const triggerBodySchema = z.object({
+  settingKey: z.string().optional(),
+  // Manual trigger always renders a fresh Reel by default, bypassing the
+  // once-per-day dedup the automatic cron relies on. Pass force:false to get
+  // the cron's "skip if today's already done" behavior instead.
+  force: z.boolean().optional().default(true),
+});
 
 /** Manual/CI-triggered pipeline run — spec bonus: operational control beyond the daily cron. */
 export function triggerRouter(container: AppContainer): Router {
   const router = Router();
 
   router.post('/trigger', async (req, res) => {
-    const { settingKey } = triggerBodySchema.parse(req.body ?? {});
+    const { settingKey, force } = triggerBodySchema.parse(req.body ?? {});
 
     const settingsList = settingKey
       ? [await container.settingsRepository.findByKey(settingKey)].filter((s) => s !== null)
@@ -26,8 +32,8 @@ export function triggerRouter(container: AppContainer): Router {
 
     const results = [];
     for (const settings of settingsList) {
-      log.info({ settingId: settings.id }, 'manually triggering pipeline');
-      const summary = await container.pipelineOrchestrator.runForSetting(settings);
+      log.info({ settingId: settings.id, force }, 'manually triggering pipeline');
+      const summary = await container.pipelineOrchestrator.runForSetting(settings, { force });
       results.push(summary);
     }
 

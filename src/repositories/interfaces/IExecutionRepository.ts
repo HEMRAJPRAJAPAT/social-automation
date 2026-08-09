@@ -8,6 +8,8 @@ import type {
 
 export interface IExecutionRepository {
   findOrCreateForToday(settingId: string, runDate: Date): Promise<Execution>;
+  /** Wipes today's Execution (if any) so a subsequent findOrCreateForToday starts fresh. */
+  deleteForToday(settingId: string, runDate: Date): Promise<void>;
   setStatus(
     executionId: string,
     status: ExecutionStatus,

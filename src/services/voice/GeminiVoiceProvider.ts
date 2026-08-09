@@ -16,6 +16,21 @@ const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models
 const GEMINI_TTS_SAMPLE_RATE_HZ = 24000;
 const GEMINI_TTS_CHANNELS = 1;
 const GEMINI_TTS_BIT_DEPTH = 16;
+// "Sulafat" is Google's voice explicitly documented as warm (vs. e.g. "Kore",
+// which reads flatter/more neutral) — https://ai.google.dev/gemini-api/docs/speech-generation#voices
+const VOICE_NAME = 'Sulafat';
+
+// Gemini's native TTS models accept a natural-language delivery instruction
+// ahead of the text and perform it rather than reading it aloud (verified:
+// output duration matches the narration alone, not instruction+narration).
+// This is what pushes the read from "correct" to "warm and engaging".
+function buildStyledPrompt(text: string): string {
+  return (
+    'Say the following warmly, naturally, and with engaging conversational ' +
+    'energy, like a friendly expert sharing something interesting with a ' +
+    `friend — clear pronunciation, natural pacing, no monotone: ${text}`
+  );
+}
 
 interface GeminiTtsResponse {
   candidates?: Array<{
@@ -24,10 +39,12 @@ interface GeminiTtsResponse {
 }
 
 /**
- * Voice provider backed by Gemini's audio-output-capable models. Not every
- * Google account/region has TTS enabled on the free tier — this is why
- * `EspeakVoiceProvider` is the default; use this adapter when Gemini TTS
- * access is confirmed available (see ARCHITECTURE.md §8).
+ * Voice provider backed by Gemini's audio-output-capable models — natural,
+ * human-sounding narration vs. `EspeakVoiceProvider`'s robotic formant
+ * synthesis. Not every Google account/region has TTS enabled on the free
+ * tier, which is why espeak remains the fallback default (see
+ * ARCHITECTURE.md §8); use this adapter when Gemini TTS access is confirmed
+ * available.
  */
 export class GeminiVoiceProvider implements IVoiceProvider {
   public readonly name = 'gemini-tts';
@@ -56,11 +73,11 @@ export class GeminiVoiceProvider implements IVoiceProvider {
           const result = await axios.post<GeminiTtsResponse>(
             `${endpoint}?key=${this.apiKey}`,
             {
-              contents: [{ parts: [{ text }] }],
+              contents: [{ parts: [{ text: buildStyledPrompt(text) }] }],
               generationConfig: {
                 responseModalities: ['AUDIO'],
                 speechConfig: {
-                  voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+                  voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE_NAME } },
                 },
               },
             },

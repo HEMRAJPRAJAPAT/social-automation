@@ -71,8 +71,16 @@ export class PipelineOrchestrator {
     private readonly backgroundMusicPath: string | undefined,
   ) {}
 
-  async runForSetting(settings: ContentSettings): Promise<PipelineRunSummary> {
+  async runForSetting(
+    settings: ContentSettings,
+    options: { force?: boolean } = {},
+  ): Promise<PipelineRunSummary> {
     const runDate = new Date();
+    if (options.force) {
+      // Manual/API trigger: always render a brand-new Reel instead of
+      // reusing/skipping today's slot (the daily cron keeps the dedup path).
+      await this.executionRepository.deleteForToday(settings.id, runDate);
+    }
     const execution = await this.executionRepository.findOrCreateForToday(settings.id, runDate);
 
     if (execution.status === 'SUCCEEDED') {

@@ -81,6 +81,18 @@ export class PrismaExecutionRepository implements IExecutionRepository {
     return toDomain(created);
   }
 
+  async deleteForToday(settingId: string, runDate: Date): Promise<void> {
+    const day = toDayStart(runDate);
+    const existing = await this.prisma.execution.findUnique({
+      where: { settingId_runDate: { settingId, runDate: day } },
+    });
+    if (!existing) return;
+    // execution_steps has ON DELETE RESTRICT on executionId, so steps must
+    // go first or the Execution delete below fails with a FK violation.
+    await this.prisma.executionStep.deleteMany({ where: { executionId: existing.id } });
+    await this.prisma.execution.delete({ where: { id: existing.id } });
+  }
+
   async setStatus(
     executionId: string,
     status: ExecutionStatus,

@@ -9,6 +9,7 @@ import { prisma } from './db/prisma.js';
 import type { ContentSettings } from './entities/ContentSettings.js';
 import { InstagramGraphPublisher } from './instagram/InstagramGraphPublisher.js';
 import type { IPublisher } from './instagram/IPublisher.js';
+import { NullPublisher } from './instagram/NullPublisher.js';
 import { PipelineOrchestrator } from './pipeline/PipelineOrchestrator.js';
 import { TopicPlanner } from './planner/TopicPlanner.js';
 import { PrismaApiLogRepository } from './repositories/prisma/PrismaApiLogRepository.js';
@@ -96,14 +97,16 @@ export class AppContainer {
     env.PUBLIC_BASE_URL,
   );
 
-  public readonly publisher: IPublisher = new InstagramGraphPublisher(
-    env.INSTAGRAM_ACCESS_TOKEN,
-    env.BUSINESS_ACCOUNT_ID,
-    env.INSTAGRAM_GRAPH_API_VERSION,
-    this.apiLogRepository,
-    env.RETRY_MAX_ATTEMPTS,
-    env.RETRY_BASE_DELAY_MS,
-  );
+  public readonly publisher: IPublisher = env.PUBLISH_ENABLED
+    ? new InstagramGraphPublisher(
+        env.INSTAGRAM_ACCESS_TOKEN,
+        env.BUSINESS_ACCOUNT_ID,
+        env.INSTAGRAM_GRAPH_API_VERSION,
+        this.apiLogRepository,
+        env.RETRY_MAX_ATTEMPTS,
+        env.RETRY_BASE_DELAY_MS,
+      )
+    : new NullPublisher();
 
   public readonly topicPlanner = new TopicPlanner(this.llmProvider, this.topicRepository);
   public readonly researchService = new ResearchService(this.llmProvider);

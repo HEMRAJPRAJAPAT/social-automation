@@ -205,6 +205,15 @@ export class VideoComposer implements IVideoComposer {
       'aac',
       '-b:a',
       '128k',
+      // Force a standard delivery rate/channel count: TTS providers emit
+      // non-standard rates (espeak: 22050Hz mono, Gemini: 24000Hz mono) that
+      // some hardware AAC decoders (many Android devices, Instagram's own
+      // pipeline) play back silently or corrupted even though it's a valid
+      // stream — resampling here is the fix, not the source provider.
+      '-ar',
+      '48000',
+      '-ac',
+      '2',
       '-r',
       String(TARGET_FPS),
       '-movflags',
