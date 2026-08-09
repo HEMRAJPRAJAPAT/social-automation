@@ -4,11 +4,13 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CaptionGenerator } from '../../../src/ai/CaptionGenerator.js';
+import { ContentEvaluator } from '../../../src/ai/ContentEvaluator.js';
 import { HashtagGenerator } from '../../../src/ai/HashtagGenerator.js';
 import { HeuristicSubtitleTimingStrategy } from '../../../src/ai/HeuristicSubtitleTimingStrategy.js';
 import { ResearchService } from '../../../src/ai/ResearchService.js';
 import { ScriptGenerator } from '../../../src/ai/ScriptGenerator.js';
 import { SubtitleGenerator } from '../../../src/ai/SubtitleGenerator.js';
+import { VisualPlanner } from '../../../src/ai/VisualPlanner.js';
 import { PipelineOrchestrator } from '../../../src/pipeline/PipelineOrchestrator.js';
 import { TopicPlanner } from '../../../src/planner/TopicPlanner.js';
 import type * as FsUtils from '../../../src/utils/fs.js';
@@ -41,6 +43,26 @@ const topicIdea = {
   hook: 'A fresh hook nobody has used',
   summary: 'A summary long enough to pass the validation checks required by the schema.',
   keywords: ['one', 'two', 'three'],
+  coreLesson: 'The one thing viewers should remember.',
+  visualIdea: 'A simple real-world analogy for this topic.',
+};
+
+const evaluationResult = {
+  hookStrength: 9,
+  clarity: 9,
+  beginnerFriendliness: 9,
+  originality: 9,
+  visualFeasibility: 9,
+  value: 9,
+  overall: 9,
+  improvementNotes: 'Strong as-is.',
+};
+
+const visualPlanResult = {
+  scenes: [
+    { lineIndex: 0, type: 'stock', stockKeywords: ['coding'] },
+    { lineIndex: 1, type: 'stock', stockKeywords: ['testing'] },
+  ],
 };
 
 const researchResult = {
@@ -93,12 +115,16 @@ function buildOrchestrator(options: { seedTopicStep?: boolean } = {}) {
   if (!options.seedTopicStep) llm.enqueueJson(topicIdea);
   llm.enqueueJson(researchResult);
   llm.enqueueJson(scriptResult);
+  llm.enqueueJson(evaluationResult);
+  llm.enqueueJson(visualPlanResult);
   llm.enqueueJson(captionResult);
   llm.enqueueJson(hashtagResult);
 
   const topicPlanner = new TopicPlanner(llm, topicRepository);
   const researchService = new ResearchService(llm);
   const scriptGenerator = new ScriptGenerator(llm);
+  const contentEvaluator = new ContentEvaluator(llm);
+  const visualPlanner = new VisualPlanner(llm);
   const captionGenerator = new CaptionGenerator(llm);
   const hashtagGenerator = new HashtagGenerator(llm);
   const subtitleGenerator = new SubtitleGenerator(new HeuristicSubtitleTimingStrategy());
@@ -136,7 +162,9 @@ function buildOrchestrator(options: { seedTopicStep?: boolean } = {}) {
     topicPlanner,
     researchService,
     scriptGenerator,
+    contentEvaluator,
     voiceProvider,
+    visualPlanner,
     mediaSourcingService,
     subtitleGenerator,
     videoComposer,
@@ -145,6 +173,7 @@ function buildOrchestrator(options: { seedTopicStep?: boolean } = {}) {
     publisher,
     storageProvider,
     undefined,
+    'DejaVu Sans',
   );
 
   return {

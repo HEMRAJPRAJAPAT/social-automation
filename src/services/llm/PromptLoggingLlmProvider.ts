@@ -10,6 +10,8 @@ const KNOWN_PURPOSES: readonly PromptPurpose[] = [
   'SCRIPT',
   'CAPTION',
   'HASHTAGS',
+  'CONTENT_EVAL',
+  'VISUAL_PLAN',
 ];
 
 function toPromptPurpose(purpose: string | undefined): PromptPurpose | null {

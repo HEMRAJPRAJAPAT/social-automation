@@ -35,6 +35,12 @@ export function makeContentSettings(overrides: Partial<ContentSettings> = {}): C
     timezone: 'UTC',
     isActive: true,
     envPrefix: null,
+    audienceLevel: 'beginner',
+    qualityThreshold: 7,
+    qualityMaxRetries: 2,
+    captionStylePreset: 'bold-highlight',
+    voiceSpeed: 'normal',
+    voiceStyle: null,
     ...overrides,
   };
 }
@@ -54,6 +60,12 @@ export function makeTopic(overrides: Partial<Topic> = {}): Topic {
     plannedFor: new Date('2026-01-01T00:00:00Z'),
     usedAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
+    coreLesson: 'The one thing to remember.',
+    visualIdea: 'A simple real-world analogy.',
+    format: 'beginner-explanation',
+    difficulty: 'beginner',
+    audienceLevel: 'beginner',
+    hookCategory: 'curiosity',
     ...overrides,
   };
 }
@@ -153,7 +165,7 @@ export function makeFakeVideoRepository(overrides: Partial<IVideoRepository> = {
         postId,
         filePath: '/tmp/out.mp4',
         publicUrl: null,
-        subtitlesPath: '/tmp/out.srt',
+        subtitlesPath: '/tmp/out.ass',
         durationSeconds: 30,
         width: 1080,
         height: 1920,
@@ -237,7 +249,7 @@ export function makeFakeRenderedVideo(overrides: Partial<RenderedVideo> = {}): R
   return {
     filePath: '/tmp/output.mp4',
     publicUrl: null,
-    subtitlesPath: '/tmp/subtitles.srt',
+    subtitlesPath: '/tmp/subtitles.ass',
     durationSeconds: 30,
     width: 1080,
     height: 1920,
