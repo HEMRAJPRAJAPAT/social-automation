@@ -52,7 +52,12 @@ export class GeminiLlmProvider implements ILlmProvider {
                 maxOutputTokens: options.maxOutputTokens ?? 4096,
               },
             },
-            { timeout: 30_000 },
+            // Gemini can spend a substantial, variable share of maxOutputTokens
+            // on internal "thinking" before any visible output appears (see
+            // above), and Render's free-tier shared CPU adds further latency
+            // on top — 30s was too tight and caused real requests to time out
+            // on their first attempt every time rather than occasionally.
+            { timeout: 60_000 },
           );
           await this.apiLogRepository.log({
             provider: 'gemini',
