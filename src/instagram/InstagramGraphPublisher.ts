@@ -20,6 +20,9 @@ interface CreateContainerResponse {
 
 interface ContainerStatusResponse {
   status_code: ContainerStatus;
+  // Separate from status_code — carries a human-readable detail string
+  // (e.g. why a container ended up in ERROR) when present.
+  status?: string;
 }
 
 interface PublishResponse {
@@ -116,17 +119,21 @@ export class InstagramGraphPublisher implements IPublisher {
     for (let attempt = 1; attempt <= CONTAINER_POLL_MAX_ATTEMPTS; attempt++) {
       const status = await this.request<ContainerStatusResponse>('media:status', () =>
         axios.get(this.baseUrl(containerId), {
-          params: { fields: 'status_code', access_token: this.accessToken },
+          params: { fields: 'status_code,status', access_token: this.accessToken },
           timeout: 15_000,
         }),
       );
 
-      log.debug({ containerId, attempt, status: status.status_code }, 'polled container status');
+      log.debug(
+        { containerId, attempt, statusCode: status.status_code, status: status.status },
+        'polled container status',
+      );
 
       if (status.status_code === 'FINISHED' || status.status_code === 'PUBLISHED') return;
       if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') {
         throw new Error(
-          `Instagram media container ${containerId} failed with status ${status.status_code}`,
+          `Instagram media container ${containerId} failed with status ${status.status_code}` +
+            (status.status ? `: ${status.status}` : ''),
         );
       }
 

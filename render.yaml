@@ -26,12 +26,12 @@ services:
         value: info
       - key: STORAGE_ROOT
         value: ./storage
-      # Render assigns https://reel-automation.onrender.com if that subdomain
-      # is free; if you rename the service above, update this to match, or
-      # just read the real URL from the Render dashboard after first deploy
-      # and paste it in here (then redeploy).
+      # Must match this service's actual assigned Render URL (check the
+      # dashboard if the service is ever renamed) — Instagram's servers fetch
+      # the rendered video from this URL, so a wrong host here means every
+      # publish fails with the container ending up in ERROR status.
       - key: PUBLIC_BASE_URL
-        value: https://reel-automation.onrender.com/media
+        value: https://social-automation-f7b9.onrender.com/media
 
       - key: CRON
         value: 0 18 * * *
