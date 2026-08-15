@@ -184,4 +184,32 @@ export class PrismaExecutionRepository implements IExecutionRepository {
     if (!row || row.status !== 'SUCCEEDED') return null;
     return row.output as unknown as T;
   }
+
+  async reapStale(olderThanMs: number): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const errorMessage = 'orphaned: process restarted mid-execution';
+
+    const stale = await this.prisma.execution.findMany({
+      where: { status: 'RUNNING', startedAt: { lt: cutoff } },
+    });
+
+    for (const execution of stale) {
+      await this.prisma.executionStep.updateMany({
+        where: { executionId: execution.id, status: 'RUNNING' },
+        data: { status: 'FAILED', finishedAt: new Date(), errorMessage },
+      });
+      await this.prisma.execution.update({
+        where: { id: execution.id },
+        data: { status: 'FAILED', errorMessage, finishedAt: new Date() },
+      });
+      if (execution.postId) {
+        await this.prisma.post.update({
+          where: { id: execution.postId },
+          data: { status: 'FAILED', lastPublishError: errorMessage },
+        });
+      }
+    }
+
+    return stale.length;
+  }
 }

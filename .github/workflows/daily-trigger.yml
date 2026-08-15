@@ -1,0 +1,61 @@
+name: Daily Reel Trigger
+
+# Drives the daily Reel pipeline from outside Render, since the free web
+# service spins down after 15 min idle and its in-process node-cron can't
+# fire while asleep. This workflow both wakes the service and runs the
+# pipeline via the existing POST /trigger endpoint.
+#
+# Requires a repository secret named TRIGGER_SECRET matching the value set
+# in the Render dashboard's Environment tab for this service.
+#
+# Note: GitHub's schedule trigger is best-effort and can be delayed by
+# several minutes during high load; if exact timing matters more than this
+# provides, an external pinger (e.g. cron-job.org) hitting the same endpoint
+# is a more precise alternative.
+
+on:
+  schedule:
+    # 12:30 UTC = 18:00 (6 PM) IST
+    - cron: '30 12 * * *'
+  workflow_dispatch: {}
+
+env:
+  APP_URL: https://social-automation-f7b9.onrender.com
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wake the free-tier service
+        run: |
+          echo "Waking ${APP_URL} (free Render services sleep after 15 min idle)..."
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "${APP_URL}/health" || echo "000")
+            echo "Attempt ${i}: HTTP ${code}"
+            if [ "${code}" = "200" ]; then
+              echo "Service is awake."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Service never came up after repeated retries."
+          exit 1
+
+      - name: Trigger daily Reel pipeline
+        env:
+          TRIGGER_SECRET: ${{ secrets.TRIGGER_SECRET }}
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" --max-time 900 \
+            -X POST "${APP_URL}/trigger" \
+            -H "X-Trigger-Secret: ${TRIGGER_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d '{"force": false}')
+          http_code=$(echo "${response}" | tail -n1)
+          body=$(echo "${response}" | sed '$d')
+          echo "HTTP status: ${http_code}"
+          echo "Response body: ${body}"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "Trigger request failed"
+            exit 1
+          fi

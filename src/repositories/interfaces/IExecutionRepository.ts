@@ -32,4 +32,11 @@ export interface IExecutionRepository {
     errorMessage?: string,
   ): Promise<ExecutionStepRecord>;
   getCompletedStepOutput<T>(executionId: string, stepName: PipelineStepName): Promise<T | null>;
+  /**
+   * Marks any Execution still RUNNING with a startedAt older than
+   * `olderThanMs` as FAILED (recovers state left behind by a process that
+   * died mid-run, e.g. an OOM kill), along with its in-flight step and post.
+   * Returns how many executions were reaped.
+   */
+  reapStale(olderThanMs: number): Promise<number>;
 }

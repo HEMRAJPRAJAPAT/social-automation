@@ -65,6 +65,9 @@ const envSchema = z.object({
   VOICE_PROVIDER: z.enum(['espeak', 'gemini']).default('espeak'),
   /** Optional path to a royalty-free background music track (mp3/wav), mixed in at low volume. */
   BACKGROUND_MUSIC_PATH: z.string().optional().default(''),
+
+  /** Required header value (X-Trigger-Secret) to authorize POST /trigger. */
+  TRIGGER_SECRET: z.string().min(1, 'TRIGGER_SECRET is required'),
 });
 
 export type Env = z.infer<typeof envSchema>;

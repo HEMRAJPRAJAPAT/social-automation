@@ -34,9 +34,9 @@ services:
         value: https://reel-automation.onrender.com/media
 
       - key: CRON
-        value: 0 9 * * *
+        value: 0 18 * * *
       - key: TIMEZONE
-        value: UTC
+        value: Asia/Kolkata
       - key: RUN_ON_STARTUP
         value: false
 
@@ -83,4 +83,9 @@ services:
       - key: PAGE_ID
         sync: false
       - key: BUSINESS_ACCOUNT_ID
+        sync: false
+      # Shared secret required in the X-Trigger-Secret header on POST /trigger
+      # — that endpoint can cause a real Instagram publish, so it must not be
+      # callable by anyone who finds the URL.
+      - key: TRIGGER_SECRET
         sync: false

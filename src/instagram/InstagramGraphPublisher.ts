@@ -34,6 +34,32 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+interface GraphApiError {
+  message?: string;
+  type?: string;
+  code?: number;
+  error_subcode?: number;
+  fbtrace_id?: string;
+}
+
+function graphError(error: unknown): GraphApiError | undefined {
+  if (!isAxiosError(error)) return undefined;
+  return (error.response?.data as { error?: GraphApiError } | undefined)?.error;
+}
+
+// Meta commonly signals throttling via HTTP 400 with one of these error
+// codes rather than a 429 — codes 4/17/32/613 are transient app/user/page
+// rate limits. Subcode 2207042 is the Reels *daily posting cap*, a separate,
+// non-transient limit that retrying will never clear, so it's excluded.
+const RATE_LIMIT_ERROR_CODES = new Set([4, 17, 32, 613]);
+
+function isRateLimitError(error: unknown): boolean {
+  const detail = graphError(error);
+  if (!detail) return false;
+  if (detail.error_subcode === 2207042) return false;
+  return detail.code !== undefined && RATE_LIMIT_ERROR_CODES.has(detail.code);
+}
+
 /**
  * Publishes to Instagram via the official Meta Graph API's Content
  * Publishing endpoints (spec §11). Requires a Business or Creator account
@@ -160,6 +186,7 @@ export class InstagramGraphPublisher implements IPublisher {
           return result.data;
         } catch (error) {
           const statusCode = isAxiosError(error) ? error.response?.status : undefined;
+          const detail = graphError(error);
           await this.apiLogRepository.log({
             provider: 'instagram',
             endpoint,
@@ -168,7 +195,11 @@ export class InstagramGraphPublisher implements IPublisher {
             latencyMs: Date.now() - startedAt,
             attempt: attemptCounter,
             success: false,
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage: detail
+              ? JSON.stringify(detail)
+              : error instanceof Error
+                ? error.message
+                : String(error),
           });
           throw error;
         }
@@ -180,7 +211,8 @@ export class InstagramGraphPublisher implements IPublisher {
         isRetryable: (error) => {
           if (!isAxiosError(error)) return true;
           const status = error.response?.status;
-          return status === undefined || status >= 500 || status === 429;
+          if (status === undefined || status >= 500 || status === 429) return true;
+          return status === 400 && isRateLimitError(error);
         },
       },
     );

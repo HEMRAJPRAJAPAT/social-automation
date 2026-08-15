@@ -35,7 +35,16 @@ import { GeminiVoiceProvider } from './services/voice/GeminiVoiceProvider.js';
 import type { IStorageProvider } from './storage/IStorageProvider.js';
 import { LocalStorageProvider } from './storage/LocalStorageProvider.js';
 import { ensureStorageDirs, OUTPUT_DIR } from './utils/fs.js';
+import { childLogger } from './utils/logger.js';
 import { VideoComposer } from './video/VideoComposer.js';
+
+const log = childLogger('container');
+
+// An Execution left RUNNING past this age almost certainly means the process
+// that owned it died mid-step (e.g. an OOM kill) rather than that it's still
+// legitimately working — reap it on boot so it doesn't sit as a permanent
+// ghost in /executions and /analytics.
+const STALE_EXECUTION_THRESHOLD_MS = 45 * 60 * 1000;
 
 /**
  * Composition root (see ARCHITECTURE.md §3): the ONLY file that imports
@@ -145,6 +154,12 @@ export class AppContainer {
 
   async bootstrap(): Promise<ContentSettings> {
     await ensureStorageDirs();
+
+    const reaped = await this.executionRepository.reapStale(STALE_EXECUTION_THRESHOLD_MS);
+    if (reaped > 0) {
+      log.warn({ reaped }, 'reaped stale RUNNING execution(s) orphaned by a previous process exit');
+    }
+
     return this.settingsRepository.upsertFromEnvDefaults({
       key: 'default',
       niche: contentDefaults.niche,

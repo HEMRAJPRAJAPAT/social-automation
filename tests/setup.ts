@@ -3,3 +3,4 @@ process.env.DATABASE_URL ??= 'postgresql://test:test@localhost:5432/test?schema=
 process.env.CONTENT_NICHE ??= 'Test Niche';
 process.env.GEMINI_API_KEY ??= 'test-gemini-key';
 process.env.LOG_LEVEL ??= 'silent';
+process.env.TRIGGER_SECRET ??= 'test-trigger-secret';

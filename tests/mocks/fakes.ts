@@ -356,6 +356,10 @@ export class FakeExecutionRepository implements IExecutionRepository {
     return record.output as T;
   }
 
+  async reapStale(): Promise<number> {
+    return 0;
+  }
+
   /** Test helper: seed a step as already-completed, to exercise resume behavior. */
   seedCompletedStep(stepName: PipelineStepName, output: unknown): void {
     this.steps.set(stepName, {
