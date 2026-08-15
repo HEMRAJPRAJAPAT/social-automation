@@ -1,3 +1,5 @@
+import { isAxiosError } from 'axios';
+
 import { childLogger } from './logger.js';
 
 const log = childLogger('retry');
@@ -13,15 +15,24 @@ export interface RetryOptions {
   label?: string;
 }
 
+// A plain Error.message on an Axios error is just a generic "Request failed
+// with status code N" wrapper; the upstream API's actual error body (the
+// part that says *why*, e.g. Gemini's {"error":{"status":"UNAVAILABLE"}})
+// lives in response.data, so surface that instead when it's present.
+function describeCause(cause: unknown): string {
+  if (isAxiosError(cause) && cause.response?.data !== undefined) {
+    return JSON.stringify(cause.response.data);
+  }
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 export class RetryExhaustedError extends Error {
   constructor(
     public readonly label: string,
     public readonly attempts: number,
     public override readonly cause: unknown,
   ) {
-    super(
-      `"${label}" failed after ${attempts} attempt(s): ${cause instanceof Error ? cause.message : String(cause)}`,
-    );
+    super(`"${label}" failed after ${attempts} attempt(s): ${describeCause(cause)}`);
     this.name = 'RetryExhaustedError';
   }
 }

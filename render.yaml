@@ -62,10 +62,14 @@ services:
         value: local
       - key: INSTAGRAM_GRAPH_API_VERSION
         value: v20.0
+      # Gemini's 503 ("model overloaded") is a documented transient condition
+      # that Google's own SDK retries up to 4x with delays escalating toward
+      # 60s; 3 attempts at a 1000ms base gave up after ~5-10s total, far
+      # short of that window. 5 attempts at a 2000ms base gives ~30s+.
       - key: RETRY_MAX_ATTEMPTS
-        value: 3
+        value: 5
       - key: RETRY_BASE_DELAY_MS
-        value: 1000
+        value: 2000
       - key: BACKGROUND_MUSIC_PATH
         value: ''
 

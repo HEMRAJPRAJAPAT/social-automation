@@ -72,6 +72,11 @@ export class GeminiLlmProvider implements ILlmProvider {
           return result.data;
         } catch (error) {
           const statusCode = isAxiosError(error) ? error.response?.status : undefined;
+          // error.message is just a generic "Request failed with status code
+          // N" wrapper; error.response.data carries Google's actual error
+          // body (e.g. {"error":{"code":503,"status":"UNAVAILABLE",...}}),
+          // which is what actually distinguishes overload vs. other causes.
+          const responseData: unknown = isAxiosError(error) ? error.response?.data : undefined;
           await this.apiLogRepository.log({
             provider: 'gemini',
             endpoint: this.modelName,
@@ -80,7 +85,11 @@ export class GeminiLlmProvider implements ILlmProvider {
             latencyMs: Date.now() - startedAt,
             attempt: attemptCounter,
             success: false,
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage: responseData
+              ? JSON.stringify(responseData)
+              : error instanceof Error
+                ? error.message
+                : String(error),
             requestSummary: { purpose: options.purpose ?? 'unspecified' },
           });
           throw error;
