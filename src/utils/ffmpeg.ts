@@ -51,7 +51,11 @@ function runCommand(
     child.on('close', (code) => {
       clearTimeout(timer);
       if (timedOut) {
-        reject(new Error(`${command} timed out after ${timeoutMs}ms and was killed: ${stderr.slice(-2000)}`));
+        reject(
+          new Error(
+            `${command} timed out after ${timeoutMs}ms and was killed: ${stderr.slice(-2000)}`,
+          ),
+        );
         return;
       }
       if (code === 0) {
