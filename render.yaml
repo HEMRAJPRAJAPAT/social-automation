@@ -50,6 +50,13 @@ services:
         value: 30
       - key: CONTENT_WRITING_STYLE
         value: friendly, concise, expert but approachable
+      # Free-tier Gemini caps this model at 20 requests/day total; each extra
+      # quality retry costs 2 calls (regenerate + re-evaluate), so this is
+      # capped at 1 (not the schema default of 2) to leave headroom for the
+      # rest of the pipeline (topic/research/visual-plan/caption/hashtags)
+      # to actually complete within the daily quota.
+      - key: CONTENT_QUALITY_MAX_RETRIES
+        value: 1
 
       - key: GEMINI_TEXT_MODEL
         value: gemini-flash-latest
