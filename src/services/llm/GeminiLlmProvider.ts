@@ -102,8 +102,11 @@ export class GeminiLlmProvider implements ILlmProvider {
         isRetryable: (error) => {
           if (!isAxiosError(error)) return true;
           const status = error.response?.status;
-          // Don't burn retries on requests that will never succeed.
-          return status === undefined || status >= 500 || status === 429;
+          // 429 on the free tier is almost always the per-day request quota
+          // (RESOURCE_EXHAUSTED), not a brief per-minute throttle -- it
+          // cannot clear within a retry loop's lifetime, so retrying it
+          // just burns wall-clock time for a guaranteed-failed outcome.
+          return status === undefined || status >= 500;
         },
       },
     );
