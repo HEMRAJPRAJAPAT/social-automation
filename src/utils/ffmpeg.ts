@@ -8,7 +8,10 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 // A hung ffmpeg on constrained hardware never recovers on its own; this caps
 // how long a single invocation may run before it's killed and reported as a
 // clean failure instead of leaving the calling step stuck RUNNING forever.
-const DEFAULT_FFMPEG_TIMEOUT_MS = 5 * 60 * 1000;
+// Raised from 5 to 8 minutes after a real timeout fired with completely
+// empty stderr (i.e. ffmpeg wasn't erroring, just still working) -- 5 min
+// was too tight for the heavier final render pass on free-tier's shared CPU.
+const DEFAULT_FFMPEG_TIMEOUT_MS = 8 * 60 * 1000;
 
 export class FfmpegError extends Error {
   constructor(
@@ -51,9 +54,15 @@ function runCommand(
     child.on('close', (code) => {
       clearTimeout(timer);
       if (timedOut) {
+        // Every call site passes the output path as the last arg -- include
+        // it so a future timeout says *which* segment/render got stuck,
+        // instead of just "ffmpeg timed out" with no way to tell which of
+        // the several ffmpeg calls in a single COMPOSE_VIDEO step it was.
+        const outputPath = args[args.length - 1];
         reject(
           new Error(
-            `${command} timed out after ${timeoutMs}ms and was killed: ${stderr.slice(-2000)}`,
+            `${command} timed out after ${timeoutMs}ms while producing "${outputPath}" and was killed` +
+              (stderr ? `: ${stderr.slice(-2000)}` : ' (no stderr output before kill)'),
           ),
         );
         return;
