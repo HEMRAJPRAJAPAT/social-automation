@@ -1,5 +1,7 @@
 -- DropIndex
-DROP INDEX "execution_history_settingId_status_idx";
+-- Guarded: this migration was generated against a drifted dev database.
+-- Databases built from 20260803134242_init never had this index.
+DROP INDEX IF EXISTS "execution_history_settingId_status_idx";
 
 -- AlterTable
 ALTER TABLE "execution_history" ALTER COLUMN "runDate" DROP DEFAULT,
@@ -25,5 +27,6 @@ ADD COLUMN     "hookCategory" TEXT NOT NULL DEFAULT 'curiosity',
 ADD COLUMN     "visualIdea" TEXT NOT NULL DEFAULT '';
 
 -- CreateIndex
-CREATE UNIQUE INDEX "execution_history_settingId_runDate_key" ON "execution_history"("settingId", "runDate");
+-- Guarded: 20260803134242_init already creates this index.
+CREATE UNIQUE INDEX IF NOT EXISTS "execution_history_settingId_runDate_key" ON "execution_history"("settingId", "runDate");
 
