@@ -25,6 +25,7 @@ import { PrismaTopicRepository } from './repositories/prisma/PrismaTopicReposito
 import { PrismaVideoRepository } from './repositories/prisma/PrismaVideoRepository.js';
 import type { IMediaProvider } from './services/interfaces/IMediaProvider.js';
 import type { IVoiceProvider } from './services/interfaces/IVoiceProvider.js';
+import { FallbackLlmProvider } from './services/llm/FallbackLlmProvider.js';
 import { GeminiLlmProvider } from './services/llm/GeminiLlmProvider.js';
 import { PromptLoggingLlmProvider } from './services/llm/PromptLoggingLlmProvider.js';
 import { MediaSourcingService } from './services/media/MediaSourcingService.js';
@@ -63,12 +64,22 @@ export class AppContainer {
   public readonly executionRepository = new PrismaExecutionRepository(prisma);
 
   public readonly llmProvider = new PromptLoggingLlmProvider(
-    new GeminiLlmProvider(
-      env.GEMINI_API_KEY,
-      env.GEMINI_TEXT_MODEL,
-      this.apiLogRepository,
-      env.RETRY_MAX_ATTEMPTS,
-      env.RETRY_BASE_DELAY_MS,
+    new FallbackLlmProvider(
+      [
+        env.GEMINI_TEXT_MODEL,
+        ...env.GEMINI_TEXT_MODEL_FALLBACKS.split(',')
+          .map((model) => model.trim())
+          .filter((model) => model.length > 0),
+      ].map(
+        (model) =>
+          new GeminiLlmProvider(
+            env.GEMINI_API_KEY,
+            model,
+            this.apiLogRepository,
+            env.RETRY_MAX_ATTEMPTS,
+            env.RETRY_BASE_DELAY_MS,
+          ),
+      ),
     ),
     this.promptHistoryRepository,
   );
