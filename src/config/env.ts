@@ -43,6 +43,11 @@ const envSchema = z.object({
 
   GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),
   GEMINI_TEXT_MODEL: z.string().default('gemini-flash-latest'),
+  // Comma-separated models tried, in order, when GEMINI_TEXT_MODEL is
+  // rate-limited (429) or overloaded (5xx). The free tier caps each model at
+  // 20 requests/day and one Reel needs ~7 LLM calls, so a single model leaves
+  // no headroom -- each fallback carries its own separate daily quota.
+  GEMINI_TEXT_MODEL_FALLBACKS: z.string().default('gemini-flash-lite-latest,gemini-3.1-flash-lite'),
   GEMINI_TTS_MODEL: z.string().optional().default(''),
 
   PEXELS_API_KEY: z.string().optional().default(''),
