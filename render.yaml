@@ -59,7 +59,7 @@ services:
         value: 1
 
       - key: GEMINI_TEXT_MODEL
-        value: gemini-flash-latest
+        value: gemini-flash-lite-latest
       - key: GEMINI_TTS_MODEL
         value: ''
       - key: VOICE_PROVIDER

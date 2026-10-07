@@ -59,3 +59,18 @@ jobs:
             echo "Trigger request failed"
             exit 1
           fi
+
+          # A 200 only means the endpoint accepted and ran the request -- each
+          # per-setting result carries its own status, and a pipeline that died
+          # partway (e.g. Gemini 503 on topic generation) still comes back 200
+          # with status FAILED. Without this check the run goes green while no
+          # Reel was ever published, which is exactly how two days of failures
+          # went unnoticed.
+          failed=$(echo "${body}" | jq -r '[.results[] | select(.status == "FAILED")] | length')
+          if [ "${failed}" != "0" ]; then
+            echo "::error::${failed} pipeline execution(s) reported status FAILED"
+            echo "${body}" | jq -r '.results[] | select(.status == "FAILED") | "  \(.executionId): \(.errorMessage)"'
+            exit 1
+          fi
+
+          echo "${body}" | jq -r '.results[] | "\(.executionId): \(.status)"'
