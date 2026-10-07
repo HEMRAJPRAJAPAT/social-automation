@@ -20,9 +20,37 @@ export class FfmpegError extends Error {
     public readonly stderr: string,
     public readonly exitCode: number | null,
   ) {
-    super(`${command} exited with code ${exitCode}: ${stderr.slice(-2000)}`);
+    super(
+      `${command} exited with code ${exitCode}: ${stderr.slice(-2000)}` + describeInvocation(args),
+    );
     this.name = 'FfmpegError';
   }
+}
+
+const MAX_FILTER_CHARS = 600;
+
+/**
+ * A single COMPOSE_VIDEO step makes many ffmpeg calls (one per segment, per
+ * diagram card, plus the final render), and with `-loglevel error` stderr is
+ * often a single line such as "<name>: No such file or directory" that says
+ * nothing about which call produced it. Naming the output (every call passes
+ * it last), the inputs, and the filter graph makes the failing call
+ * identifiable from the error alone.
+ */
+function describeInvocation(args: string[]): string {
+  const output = args[args.length - 1];
+  const inputs = args.flatMap((arg, i) => (args[i - 1] === '-i' ? [arg] : []));
+  const filterIndex = args.findIndex((arg) => arg === '-filter_complex' || arg === '-vf');
+  const filter = filterIndex >= 0 ? args[filterIndex + 1] : undefined;
+
+  const parts = [`while producing "${output}"`];
+  if (inputs.length > 0) parts.push(`inputs: ${inputs.join(', ')}`);
+  if (filter) {
+    const shown =
+      filter.length > MAX_FILTER_CHARS ? `${filter.slice(0, MAX_FILTER_CHARS)}...` : filter;
+    parts.push(`${args[filterIndex]}: ${shown}`);
+  }
+  return `\n(${parts.join('; ')})`;
 }
 
 function runCommand(
