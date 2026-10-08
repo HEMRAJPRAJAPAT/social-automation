@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -34,7 +35,8 @@ vi.mock('../../../src/utils/fs.js', async () => {
   const actual = await vi.importActual<typeof FsUtils>('../../../src/utils/fs.js');
   return {
     ...actual,
-    executionWorkDir: (executionId: string) => path.join(os.tmpdir(), 'reel-automation-test', executionId),
+    executionWorkDir: (executionId: string) =>
+      path.join(os.tmpdir(), 'reel-automation-test', executionId),
   };
 });
 
@@ -97,7 +99,9 @@ const hashtagResult = {
   popular: ['bigtag1', 'bigtag2', 'bigtag3'],
 };
 
-function buildOrchestrator(options: { seedTopicStep?: boolean } = {}) {
+function buildOrchestrator(
+  options: { seedTopicStep?: boolean; backgroundMusicPath?: string } = {},
+) {
   const executionRepository = new FakeExecutionRepository('setting-1');
   const topicRepository = makeFakeTopicRepository({
     findPlannedForDate: async () => null,
@@ -172,7 +176,7 @@ function buildOrchestrator(options: { seedTopicStep?: boolean } = {}) {
     hashtagGenerator,
     publisher,
     storageProvider,
-    undefined,
+    options.backgroundMusicPath,
     'DejaVu Sans',
   );
 
@@ -259,5 +263,33 @@ describe('PipelineOrchestrator', () => {
     // MEDIA step still runs fresh in this scenario since only PLAN_TOPIC was
     // seeded, but PLAN_TOPIC itself must NOT trigger another LLM call.
     expect(mediaSourcingService.sourceForScript).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders without music when BACKGROUND_MUSIC_PATH points at a file that does not exist', async () => {
+    // Oct 8: Render had BACKGROUND_MUSIC_PATH set to a bare hash, not a file,
+    // and every Reel failed at the final ffmpeg render because of it.
+    const { orchestrator, videoComposer } = buildOrchestrator({
+      backgroundMusicPath: '7d44cdbac133058777f56205876196ed',
+    });
+
+    const summary = await orchestrator.runForSetting(makeContentSettings());
+
+    expect(summary.status).toBe('SUCCEEDED');
+    expect(videoComposer.compose).toHaveBeenCalledWith(
+      expect.objectContaining({ backgroundMusicPath: undefined }),
+    );
+  });
+
+  it('still mixes in background music when the file exists', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'music-'));
+    const musicPath = path.join(dir, 'track.mp3');
+    await fs.writeFile(musicPath, 'not really audio');
+    const { orchestrator, videoComposer } = buildOrchestrator({ backgroundMusicPath: musicPath });
+
+    await orchestrator.runForSetting(makeContentSettings());
+
+    expect(videoComposer.compose).toHaveBeenCalledWith(
+      expect.objectContaining({ backgroundMusicPath: musicPath }),
+    );
   });
 });
