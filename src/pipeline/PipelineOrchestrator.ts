@@ -149,6 +149,9 @@ export class PipelineOrchestrator {
     await ensureDir(workDir);
 
     try {
+      // Before anything that spends quota: an unusable publish token would
+      // otherwise only surface at the very last step.
+      await this.publisher.verifyCredentials?.();
       const summary = await this.runPipeline(execution.id, settings, workDir);
       await this.executionRepository.setStatus(execution.id, 'SUCCEEDED', {
         currentStep: null,

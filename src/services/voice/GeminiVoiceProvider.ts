@@ -131,6 +131,10 @@ export class GeminiVoiceProvider implements IVoiceProvider {
         attempts: this.retryAttempts,
         baseDelayMs: this.retryBaseDelayMs,
         label: 'gemini-tts:synthesize',
+        // Same rule as GeminiLlmProvider: a free-tier 429 is the daily quota
+        // and cannot clear within the retry loop, so hand off to the next
+        // voice in FallbackVoiceProvider at once instead of sleeping on it.
+        isRetryable: (error) => !isAxiosError(error) || error.response?.status !== 429,
       },
     );
 

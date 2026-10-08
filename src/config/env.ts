@@ -49,6 +49,10 @@ const envSchema = z.object({
   // no headroom -- each fallback carries its own separate daily quota.
   GEMINI_TEXT_MODEL_FALLBACKS: z.string().default('gemini-flash-lite-latest,gemini-3.1-flash-lite'),
   GEMINI_TTS_MODEL: z.string().optional().default(''),
+  // Comma-separated Gemini voices tried after GEMINI_TTS_MODEL fails, before
+  // the offline espeak-ng voice that always ends the chain. On Oct 8 every
+  // Gemini 3.x TTS model was overloaded while 2.5 kept answering.
+  GEMINI_TTS_MODEL_FALLBACKS: z.string().default('gemini-2.5-flash-preview-tts'),
 
   PEXELS_API_KEY: z.string().optional().default(''),
   PIXABAY_API_KEY: z.string().optional().default(''),
