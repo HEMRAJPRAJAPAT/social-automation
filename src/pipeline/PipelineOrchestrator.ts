@@ -79,6 +79,22 @@ export class PipelineOrchestrator {
     private readonly fontFamily: string,
   ) {}
 
+  /**
+   * Background music is optional decoration, so a misconfigured
+   * BACKGROUND_MUSIC_PATH must not cost the day's Reel: ffmpeg fails the whole
+   * final render on a missing input. On Oct 8 Render had it set to a bare hash
+   * that wasn't a file, and every run died at COMPOSE_VIDEO because of it.
+   */
+  private async resolveBackgroundMusic(): Promise<string | undefined> {
+    if (!this.backgroundMusicPath) return undefined;
+    if (await fileExists(this.backgroundMusicPath)) return this.backgroundMusicPath;
+    log.warn(
+      { backgroundMusicPath: this.backgroundMusicPath },
+      'BACKGROUND_MUSIC_PATH does not point at an existing file; rendering with narration only',
+    );
+    return undefined;
+  }
+
   async runForSetting(
     settings: ContentSettings,
     options: { force?: boolean } = {},
@@ -234,6 +250,7 @@ export class PipelineOrchestrator {
       (cached) => fileExists(cached.assFilePath),
     );
 
+    const backgroundMusicPath = await this.resolveBackgroundMusic();
     const renderedVideo = await this.runStep(
       executionId,
       'COMPOSE_VIDEO',
@@ -246,7 +263,7 @@ export class PipelineOrchestrator {
           visualPlan,
           outputPath: path.join(workDir, 'output.mp4'),
           workDir,
-          backgroundMusicPath: this.backgroundMusicPath || undefined,
+          backgroundMusicPath,
           fontFamily: this.fontFamily,
         }),
       (cached) => fileExists(cached.filePath),
