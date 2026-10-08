@@ -32,6 +32,7 @@ import { MediaSourcingService } from './services/media/MediaSourcingService.js';
 import { PexelsMediaProvider } from './services/media/PexelsMediaProvider.js';
 import { PixabayMediaProvider } from './services/media/PixabayMediaProvider.js';
 import { EspeakVoiceProvider } from './services/voice/EspeakVoiceProvider.js';
+import { FallbackVoiceProvider } from './services/voice/FallbackVoiceProvider.js';
 import { GeminiVoiceProvider } from './services/voice/GeminiVoiceProvider.js';
 import type { IStorageProvider } from './storage/IStorageProvider.js';
 import { LocalStorageProvider } from './storage/LocalStorageProvider.js';
@@ -84,15 +85,30 @@ export class AppContainer {
     this.promptHistoryRepository,
   );
 
+  // Gemini voices in preference order, always ending in the offline espeak-ng
+  // voice: narration is the one step a Reel can't ship without, so the chain
+  // must end in something that doesn't depend on a remote service.
   public readonly voiceProvider: IVoiceProvider =
     env.VOICE_PROVIDER === 'gemini'
-      ? new GeminiVoiceProvider(
-          env.GEMINI_API_KEY,
-          env.GEMINI_TTS_MODEL,
-          this.apiLogRepository,
-          env.RETRY_MAX_ATTEMPTS,
-          env.RETRY_BASE_DELAY_MS,
-        )
+      ? new FallbackVoiceProvider([
+          ...[
+            ...new Set(
+              [env.GEMINI_TTS_MODEL, ...env.GEMINI_TTS_MODEL_FALLBACKS.split(',')]
+                .map((model) => model.trim())
+                .filter((model) => model.length > 0),
+            ),
+          ].map(
+            (model) =>
+              new GeminiVoiceProvider(
+                env.GEMINI_API_KEY,
+                model,
+                this.apiLogRepository,
+                env.RETRY_MAX_ATTEMPTS,
+                env.RETRY_BASE_DELAY_MS,
+              ),
+          ),
+          new EspeakVoiceProvider(),
+        ])
       : new EspeakVoiceProvider();
 
   private readonly pexelsProvider: IMediaProvider = new PexelsMediaProvider(

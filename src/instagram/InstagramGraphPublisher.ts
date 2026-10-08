@@ -95,6 +95,39 @@ export class InstagramGraphPublisher implements IPublisher {
     };
   }
 
+  /**
+   * Long-lived user tokens expire after ~60 days. When that happens nothing
+   * fails until PUBLISH — after Gemini quota, TTS, media downloads and a
+   * multi-minute render have all been spent — which is how an expired token
+   * (Oct 3) would have silently cost every daily run. One read of the account
+   * node catches it up front.
+   */
+  async verifyCredentials(): Promise<void> {
+    try {
+      await axios.get(this.baseUrl(this.businessAccountId), {
+        params: { fields: 'id', access_token: this.accessToken },
+        timeout: 30_000,
+      });
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const detail = graphError(error);
+      // Only a 4xx carrying a Graph error object is a verdict on the token
+      // itself; network failures and Meta 5xx are not, and must not block.
+      if (status === undefined || status >= 500 || !detail) {
+        log.warn(
+          { status, error: error instanceof Error ? error.message : String(error) },
+          'could not verify Instagram credentials (transient); continuing',
+        );
+        return;
+      }
+      throw new Error(
+        `Instagram credentials are not usable: ${detail.message ?? 'unknown error'} ` +
+          `(code ${detail.code ?? '?'}). Renew INSTAGRAM_ACCESS_TOKEN — a System User token ` +
+          'from Meta Business Settings does not expire.',
+      );
+    }
+  }
+
   private baseUrl(nodePath: string): string {
     return `https://graph.facebook.com/${this.apiVersion}/${nodePath}`;
   }

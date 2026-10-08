@@ -292,4 +292,22 @@ describe('PipelineOrchestrator', () => {
       expect.objectContaining({ backgroundMusicPath: musicPath }),
     );
   });
+
+  it('stops before spending any quota when the publisher reports bad credentials', async () => {
+    // Oct 8: the Instagram token had expired on Oct 3, so every run would
+    // have spent Gemini quota and a full render only to fail at PUBLISH.
+    const { orchestrator, publisher, mediaSourcingService, llm } = buildOrchestrator();
+    publisher.verifyCredentials = vi.fn(async () => {
+      throw new Error('Instagram access token has expired; renew INSTAGRAM_ACCESS_TOKEN');
+    });
+    const generateJson = vi.spyOn(llm, 'generateJson');
+
+    const summary = await orchestrator.runForSetting(makeContentSettings());
+
+    expect(summary.status).toBe('FAILED');
+    expect(summary.errorMessage).toMatch(/renew INSTAGRAM_ACCESS_TOKEN/);
+    expect(generateJson).not.toHaveBeenCalled();
+    expect(mediaSourcingService.sourceForScript).not.toHaveBeenCalled();
+    expect(publisher.publishReel).not.toHaveBeenCalled();
+  });
 });

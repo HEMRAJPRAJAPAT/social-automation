@@ -11,4 +11,12 @@ export interface IPublisher {
   readonly platform: string;
 
   publishReel(input: PublishReelInput): Promise<PublishResult>;
+
+  /**
+   * Cheap preflight run before any step that spends quota. Throws only when
+   * the credentials are definitely unusable (expired, revoked, missing
+   * permission); a transient failure that says nothing about them must not
+   * block the run.
+   */
+  verifyCredentials?(): Promise<void>;
 }
