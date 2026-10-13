@@ -42,7 +42,25 @@ const fails = (error: Error) => () => {
   throw error;
 };
 
+/** The error axios raises when Gemini doesn't answer within the request timeout: no HTTP status at all. */
+function timedOut(): RetryExhaustedError {
+  const axiosError = new AxiosError('timeout of 60000ms exceeded', 'ECONNABORTED');
+  return new RetryExhaustedError('gemini:TOPIC', 1, axiosError);
+}
+
 describe('FallbackLlmProvider', () => {
+  it('falls back when the model never answers (timeout), not only on an HTTP error', async () => {
+    // Oct 13, run #75: "gemini:TOPIC" timed out and the run died, because a
+    // timeout carries no status code and was not treated as "unavailable".
+    const primary = new StubProvider('gemini-flash-lite-latest', fails(timedOut()));
+    const backup = new StubProvider('gemini-3.1-flash-lite', ok('a topic'));
+
+    const provider = new FallbackLlmProvider([primary, backup]);
+
+    await expect(provider.generateText('prompt')).resolves.toBe('a topic');
+    expect(provider.modelName).toBe('gemini-3.1-flash-lite');
+  });
+
   it('falls back to the next model when the first is out of free-tier quota', async () => {
     const primary = new StubProvider('gemini-flash-latest', fails(retryExhausted(429, 'RESOURCE_EXHAUSTED')));
     const backup = new StubProvider('gemini-flash-lite-latest', ok('a topic'));

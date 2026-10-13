@@ -7,6 +7,7 @@ import { ScriptGenerator } from './ai/ScriptGenerator.js';
 import { SubtitleGenerator } from './ai/SubtitleGenerator.js';
 import { VisualPlanner } from './ai/VisualPlanner.js';
 import { env, contentDefaults } from './config/env.js';
+import { modelChain } from './config/modelChain.js';
 import { prisma } from './db/prisma.js';
 import type { ContentSettings } from './entities/ContentSettings.js';
 import { InstagramGraphPublisher } from './instagram/InstagramGraphPublisher.js';
@@ -66,12 +67,7 @@ export class AppContainer {
 
   public readonly llmProvider = new PromptLoggingLlmProvider(
     new FallbackLlmProvider(
-      [
-        env.GEMINI_TEXT_MODEL,
-        ...env.GEMINI_TEXT_MODEL_FALLBACKS.split(',')
-          .map((model) => model.trim())
-          .filter((model) => model.length > 0),
-      ].map(
+      modelChain(env.GEMINI_TEXT_MODEL, env.GEMINI_TEXT_MODEL_FALLBACKS).map(
         (model) =>
           new GeminiLlmProvider(
             env.GEMINI_API_KEY,
@@ -91,13 +87,7 @@ export class AppContainer {
   public readonly voiceProvider: IVoiceProvider =
     env.VOICE_PROVIDER === 'gemini'
       ? new FallbackVoiceProvider([
-          ...[
-            ...new Set(
-              [env.GEMINI_TTS_MODEL, ...env.GEMINI_TTS_MODEL_FALLBACKS.split(',')]
-                .map((model) => model.trim())
-                .filter((model) => model.length > 0),
-            ),
-          ].map(
+          ...modelChain(env.GEMINI_TTS_MODEL, env.GEMINI_TTS_MODEL_FALLBACKS).map(
             (model) =>
               new GeminiVoiceProvider(
                 env.GEMINI_API_KEY,

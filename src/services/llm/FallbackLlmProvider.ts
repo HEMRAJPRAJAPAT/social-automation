@@ -7,10 +7,10 @@ import type { ILlmProvider, LlmGenerationOptions } from '../interfaces/ILlmProvi
 const log = childLogger('fallback-llm');
 
 /**
- * Returns true for the two failures that mean "this model can't serve us right
+ * Returns true for the failures that mean "this model can't serve us right
  * now, but another one might": 429 RESOURCE_EXHAUSTED (the free tier's 20
- * requests/day/model cap, which cannot clear for hours) and 5xx UNAVAILABLE
- * (Google-side capacity). Anything else — an empty response, malformed JSON, a
+ * requests/day/model cap, which cannot clear for hours), 5xx UNAVAILABLE
+ * (Google-side capacity), and no response at all (a timeout). Anything else — an empty response, malformed JSON, a
  * bad API key — would fail identically on every model, so switching would just
  * burn a second model's quota for the same error.
  */
@@ -18,7 +18,12 @@ function isModelUnavailable(error: unknown): boolean {
   const cause = error instanceof RetryExhaustedError ? error.cause : error;
   if (!isAxiosError(cause)) return false;
   const status = cause.response?.status;
-  return status === 429 || (status !== undefined && status >= 500);
+  // No response at all: the model didn't answer within the request timeout
+  // (or the connection dropped). An overloaded model often hangs rather than
+  // returning a 503 — on Oct 13 "gemini:TOPIC" timed out and the whole run
+  // died here, while gemini-3.1-flash-lite was still answering.
+  if (status === undefined) return true;
+  return status === 429 || status >= 500;
 }
 
 /**
