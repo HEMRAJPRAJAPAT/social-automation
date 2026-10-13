@@ -11,7 +11,9 @@ function tagList(prefix: string, count: number): string[] {
 }
 
 describe('HashtagGenerator', () => {
-  it('produces between 15 and 20 deduplicated, hash-prefixed tags', async () => {
+  it('keeps at most five deduplicated, hash-prefixed tags, mixed across tiers', async () => {
+    // Previously 15-20 tags were posted. The instagram-agent-skill pack caps a
+    // post at five (it reports Instagram cut the limit on 18 Dec 2025).
     const llm = new FakeLlmProvider();
     llm.enqueueJson({
       small: tagList('small', 8),
@@ -20,15 +22,9 @@ describe('HashtagGenerator', () => {
     });
 
     const generator = new HashtagGenerator(llm);
-    const hashtags = generator.generate(topic, settings, 'post-1');
-    const result = await hashtags;
+    const result = await generator.generate(topic, settings, 'post-1');
 
-    expect(result.length).toBeGreaterThanOrEqual(15);
-    expect(result.length).toBeLessThanOrEqual(20);
-    for (const tag of result) {
-      expect(tag.startsWith('#')).toBe(true);
-    }
-    expect(new Set(result).size).toBe(result.length);
+    expect(result).toEqual(['#small0', '#medium0', '#popular0', '#small1', '#medium1']);
   });
 
   it('interleaves tiers so the result is a healthy mix, not one tier exhausted first', async () => {
@@ -67,6 +63,8 @@ describe('HashtagGenerator', () => {
     llm.enqueueJson({ small: [], medium: [], popular: [] });
 
     const generator = new HashtagGenerator(llm);
-    await expect(generator.generate(topic, settings, 'post-1')).rejects.toThrow(/schema validation/i);
+    await expect(generator.generate(topic, settings, 'post-1')).rejects.toThrow(
+      /schema validation/i,
+    );
   });
 });

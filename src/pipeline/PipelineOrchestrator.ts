@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { CaptionGenerator } from '../ai/CaptionGenerator.js';
 import type { ContentEvaluator } from '../ai/ContentEvaluator.js';
 import type { HashtagGenerator } from '../ai/HashtagGenerator.js';
+import { checkScriptRules, sanitizeCaptionText } from '../ai/ReelRules.js';
 import type { ResearchService } from '../ai/ResearchService.js';
 import type { ScriptFeedback, ScriptGenerator } from '../ai/ScriptGenerator.js';
 import type { SubtitleGenerator } from '../ai/SubtitleGenerator.js';
@@ -326,7 +327,7 @@ export class PipelineOrchestrator {
     postId: string,
     recentHooks: string[],
   ): Promise<{ script: Script; scores: EvaluationScores }> {
-    let best: { script: Script; scores: EvaluationScores } | null = null;
+    let best: { script: Script; scores: EvaluationScores; violations: string[] } | null = null;
     let feedback: ScriptFeedback | undefined;
 
     const attempts = settings.qualityMaxRetries + 1;
@@ -340,26 +341,41 @@ export class PipelineOrchestrator {
         feedback,
       );
       const scores = await this.contentEvaluator.evaluate(candidate, topic, settings, postId);
+      // Gemini's self-score can't catch a "3-second" hook that is 25 words
+      // long; these word-count rules can (see ReelRules).
+      const violations = checkScriptRules(candidate);
 
-      if (!best || scores.overall > best.scores.overall) {
-        best = { script: candidate, scores };
+      // Prefer fewer broken rules first, then the higher score: a rule
+      // violation is a measured defect, a score is the model's opinion.
+      if (
+        !best ||
+        violations.length < best.violations.length ||
+        (violations.length === best.violations.length && scores.overall > best.scores.overall)
+      ) {
+        best = { script: candidate, scores, violations };
       }
-      if (scores.overall >= settings.qualityThreshold) {
+      if (scores.overall >= settings.qualityThreshold && violations.length === 0) {
         return { script: candidate, scores };
       }
 
       log.warn(
-        { postId, attempt, overall: scores.overall, threshold: settings.qualityThreshold },
-        'script scored below quality threshold, regenerating with feedback',
+        {
+          postId,
+          attempt,
+          overall: scores.overall,
+          threshold: settings.qualityThreshold,
+          violations,
+        },
+        'script below quality threshold or broke a length rule, regenerating with feedback',
       );
-      feedback = { scores };
+      feedback = { scores, ruleViolations: violations };
     }
 
     log.warn(
-      { postId, bestScore: best?.scores.overall },
-      'script quality still below threshold after all retries; shipping the best-scoring attempt',
+      { postId, bestScore: best?.scores.overall, violations: best?.violations },
+      'script still short of the quality bar after all retries; shipping the best attempt',
     );
-    return best!;
+    return { script: best!.script, scores: best!.scores };
   }
 
   private async publishVideo(
@@ -370,7 +386,9 @@ export class PipelineOrchestrator {
   ) {
     const key = `reels/${postId}.mp4`;
     const stored = await this.storageProvider.save(localVideoPath, key);
-    const fullCaption = `${caption.captionText}\n\n${hashtags.join(' ')}`.trim();
+    const fullCaption = sanitizeCaptionText(
+      `${caption.captionText}\n\n${hashtags.join(' ')}`,
+    ).trim();
 
     await this.postRepository.setStatus(postId, 'PUBLISHING');
     try {
