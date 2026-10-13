@@ -79,6 +79,38 @@ describe('ScriptGenerator', () => {
     expect(llm.calls[0]!.prompt).toContain('scored 3/10');
   });
 
+  it('states the hook and line length limits up front, so the first attempt can already pass', async () => {
+    const llm = new FakeLlmProvider();
+    llm.enqueueJson(validScript('A hook nobody has heard before'));
+
+    await new ScriptGenerator(llm).generate(topic, research, settings, 'post-1', []);
+
+    expect(llm.calls[0]!.prompt).toMatch(/hook.*12 words or fewer/is);
+    expect(llm.calls[0]!.prompt).toMatch(/no line.*over 10 words/is);
+  });
+
+  it('feeds broken length rules back word for word when regenerating', async () => {
+    const llm = new FakeLlmProvider();
+    llm.enqueueJson(validScript('A hook nobody has heard before'));
+    const violation = 'Hook is 25 words (~10.0s to say); cut it to 12 words or fewer.';
+
+    await new ScriptGenerator(llm).generate(topic, research, settings, 'post-1', [], {
+      scores: {
+        hookStrength: 8,
+        clarity: 8,
+        beginnerFriendliness: 8,
+        originality: 8,
+        visualFeasibility: 8,
+        value: 8,
+        overall: 8,
+        improvementNotes: 'Solid.',
+      },
+      ruleViolations: [violation],
+    });
+
+    expect(llm.calls[0]!.prompt).toContain(violation);
+  });
+
   it('throws when no fresh hook can be generated after all retries', async () => {
     const llm = new FakeLlmProvider();
     for (let i = 0; i < 3; i++) {
@@ -87,7 +119,9 @@ describe('ScriptGenerator', () => {
 
     const generator = new ScriptGenerator(llm);
     await expect(
-      generator.generate(topic, research, settings, 'post-1', ['5 React Hooks You Should Know Today']),
+      generator.generate(topic, research, settings, 'post-1', [
+        '5 React Hooks You Should Know Today',
+      ]),
     ).rejects.toThrow(/fresh hook/i);
   });
 });

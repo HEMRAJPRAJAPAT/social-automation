@@ -11,10 +11,14 @@ import type { ILlmProvider } from '../services/interfaces/ILlmProvider.js';
 import { childLogger } from '../utils/logger.js';
 import { countWords, isNearDuplicate } from '../utils/text.js';
 
+import {
+  HOOK_MAX_WORDS,
+  LINE_MAX_WORDS,
+  SPEAKING_WORDS_PER_SECOND as WORDS_PER_SECOND,
+} from './ReelRules.js';
+
 const log = childLogger('script-generator');
 
-/** Average natural speaking pace for narrated short-form video, in words/second. */
-const WORDS_PER_SECOND = 2.5;
 const MAX_HOOK_RETRY_ATTEMPTS = 3;
 const HOOK_SIMILARITY_THRESHOLD = 0.7;
 
@@ -48,6 +52,8 @@ const scriptSchema = z.object({
 /** Feedback from a low-scoring ContentEvaluator pass, fed back in to steer a regeneration. */
 export interface ScriptFeedback {
   scores: EvaluationScores;
+  /** Deterministic length rules the previous attempt broke (see ReelRules). */
+  ruleViolations?: string[];
 }
 
 export class ScriptGenerator {
@@ -126,9 +132,14 @@ export class ScriptGenerator {
             .join('\n')}`
         : '';
 
+    const ruleBlock = feedback?.ruleViolations?.length
+      ? `It also broke these length rules, which are checked automatically:\n${feedback.ruleViolations
+          .map((violation) => `- ${violation}`)
+          .join('\n')}\n`
+      : '';
     const feedbackBlock = feedback
       ? `\nYour previous attempt at this script scored ${feedback.scores.overall}/10 overall and was rejected. Feedback: "${feedback.scores.improvementNotes}"
-Specifically fix that in this attempt — do not repeat the same hook, structure, or wording as before.\n`
+${ruleBlock}Specifically fix that in this attempt — do not repeat the same hook, structure, or wording as before.\n`
       : '';
 
     return `Write an original ${settings.videoDurationSeconds}-second Instagram Reel script in
@@ -163,7 +174,10 @@ Write like a real person explaining something to a friend, not documentation. Co
 - Acronyms or technical words the text-to-speech voice would mispronounce (e.g. "SQL", "API")
   should be written the way they're actually spoken (e.g. "sequel", "A P I") or worked around with
   plain language, since this script is read aloud by a TTS engine, not displayed as text.
-- The hook must grab attention in the first 3 seconds — no throat-clearing.
+- The hook must grab attention in the first 3 seconds — no throat-clearing. Keep the hook to
+  ${HOOK_MAX_WORDS} words or fewer.
+- Each line is one shot on screen: no line may be over ${LINE_MAX_WORDS} words. Split longer thoughts
+  into several short lines instead.
 - End with a specific, natural call-to-action (e.g. follow for more, comment a question, save this
   if it's useful) — only if it fits naturally, don't force one in.
 - Be 100% original — do not copy phrasing from the research verbatim.

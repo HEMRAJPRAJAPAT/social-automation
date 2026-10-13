@@ -7,8 +7,12 @@ import { childLogger } from '../utils/logger.js';
 
 const log = childLogger('hashtag-generator');
 
-const MIN_HASHTAGS = 15;
-const MAX_HASHTAGS = 20;
+// The instagram-agent-skill pack (MIT) caps a post at five hashtags, reporting
+// that Instagram cut the limit from 30 on 18 Dec 2025 and that tags past the
+// fifth don't count. Unverified against Meta's docs, but five is safe either
+// way. The tiers are interleaved below, so five still spans small/medium/popular.
+const MIN_HASHTAGS = 3;
+const MAX_HASHTAGS = 5;
 
 const hashtagSchema = z.object({
   small: z.array(z.string().min(2)).min(3),

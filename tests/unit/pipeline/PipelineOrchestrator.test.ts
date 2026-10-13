@@ -100,7 +100,13 @@ const hashtagResult = {
 };
 
 function buildOrchestrator(
-  options: { seedTopicStep?: boolean; backgroundMusicPath?: string } = {},
+  options: {
+    seedTopicStep?: boolean;
+    backgroundMusicPath?: string;
+    /** Script + evaluation replies for each quality-loop attempt, in order. */
+    scriptAttempts?: Array<{ script: unknown; evaluation: unknown }>;
+    caption?: unknown;
+  } = {},
 ) {
   const executionRepository = new FakeExecutionRepository('setting-1');
   const topicRepository = makeFakeTopicRepository({
@@ -114,14 +120,18 @@ function buildOrchestrator(
 
   const llm = new FakeLlmProvider();
   // When PLAN_TOPIC's output is pre-seeded as already completed, the
-  // orchestrator must never dequeue a response for it — queueing one here
+  // orchestrator must never dequeue a response for it \u2014 queueing one here
   // would shift every subsequent response out of alignment.
   if (!options.seedTopicStep) llm.enqueueJson(topicIdea);
   llm.enqueueJson(researchResult);
-  llm.enqueueJson(scriptResult);
-  llm.enqueueJson(evaluationResult);
+  for (const attempt of options.scriptAttempts ?? [
+    { script: scriptResult, evaluation: evaluationResult },
+  ]) {
+    llm.enqueueJson(attempt.script);
+    llm.enqueueJson(attempt.evaluation);
+  }
   llm.enqueueJson(visualPlanResult);
-  llm.enqueueJson(captionResult);
+  llm.enqueueJson(options.caption ?? captionResult);
   llm.enqueueJson(hashtagResult);
 
   const topicPlanner = new TopicPlanner(llm, topicRepository);
@@ -220,7 +230,7 @@ describe('PipelineOrchestrator', () => {
     expect(second.status).toBe('SKIPPED_ALREADY_DONE');
   });
 
-  it('never throws when a step fails — it returns a FAILED summary instead', async () => {
+  it('never throws when a step fails \u2014 it returns a FAILED summary instead', async () => {
     const { orchestrator, publisher } = buildOrchestrator();
     publisher.publishReel = vi.fn(async () => {
       throw new Error('Instagram is down');
@@ -310,4 +320,69 @@ describe('PipelineOrchestrator', () => {
     expect(mediaSourcingService.sourceForScript).not.toHaveBeenCalled();
     expect(publisher.publishReel).not.toHaveBeenCalled();
   });
+
+  // The real Oct 7 hook: Gemini rated its own script fine, yet the "3-second"
+  // hook was 25 words long.
+  const longHook =
+    'Aapka A P I bill bina baat ke badh raha hai, kyunki aap AI ko baar-baar wahi puraani kitaab padhne par majboor kar rahe ho.';
+  const longLine =
+    'Socho ek librarian ko jo har naye customer ke liye shuru se moti rulebook loudly padh raha hai.';
+
+  it('regenerates a script that scores well but breaks a length rule, naming the rule', async () => {
+    const { orchestrator, videoComposer, llm } = buildOrchestrator({
+      scriptAttempts: [
+        { script: { ...scriptResult, hook: longHook }, evaluation: evaluationResult },
+        { script: scriptResult, evaluation: evaluationResult },
+      ],
+    });
+
+    const summary = await orchestrator.runForSetting(makeContentSettings());
+
+    expect(summary.status).toBe('SUCCEEDED');
+    expect(videoComposer.compose).toHaveBeenCalledWith(
+      expect.objectContaining({ script: expect.objectContaining({ hook: scriptResult.hook }) }),
+    );
+    expect(llm.calls.some((call) => call.prompt.includes('Hook is 25 words'))).toBe(true);
+  });
+
+  it('ships the attempt with the fewest broken rules when none pass, so the Reel still goes out', async () => {
+    const twoBroken = {
+      ...scriptResult,
+      hook: longHook,
+      lines: [{ index: 0, text: longLine, visualKeyword: 'coding' }, scriptResult.lines[1]],
+    };
+    const oneBroken = { ...scriptResult, hook: `${longHook} Sach mein.` };
+    const { orchestrator, videoComposer } = buildOrchestrator({
+      scriptAttempts: [
+        { script: twoBroken, evaluation: evaluationResult },
+        { script: oneBroken, evaluation: { ...evaluationResult, overall: 7 } },
+        { script: twoBroken, evaluation: { ...evaluationResult, overall: 10 } },
+      ],
+    });
+
+    const summary = await orchestrator.runForSetting(makeContentSettings());
+
+    expect(summary.status).toBe('SUCCEEDED');
+    expect(videoComposer.compose).toHaveBeenCalledWith(
+      expect.objectContaining({ script: expect.objectContaining({ hook: oneBroken.hook }) }),
+    );
+  });
+
+  it('posts a caption with no invisible characters or em dashes, and at most five hashtags', async () => {
+    const { orchestrator, publisher } = buildOrchestrator({
+      caption: {
+        ...captionResult,
+        captionText:
+          'Ye trick \u2014 sach mein kaam karti hai.\u200B Caption long enough for the minimum length.',
+      },
+    });
+
+    await orchestrator.runForSetting(makeContentSettings());
+
+    const posted = vi.mocked(publisher.publishReel).mock.calls[0]![0].caption;
+    expect(posted).toContain('Ye trick, sach mein kaam karti hai.');
+    expect(posted).not.toMatch(/[\u200B\u2014]/);
+    expect(posted.match(/#\w+/g)).toHaveLength(5);
+  });
 });
+
