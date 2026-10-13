@@ -101,6 +101,10 @@ export class GeminiLlmProvider implements ILlmProvider {
         label: `gemini:${options.purpose ?? this.modelName}`,
         isRetryable: (error) => {
           if (!isAxiosError(error)) return true;
+          // A timeout already cost the full 60s request budget; retrying the
+          // same stuck model five times cost 6.5 minutes on Oct 13. Fail at
+          // once so FallbackLlmProvider moves on to a model that's answering.
+          if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') return false;
           const status = error.response?.status;
           // 429 on the free tier is almost always the per-day request quota
           // (RESOURCE_EXHAUSTED), not a brief per-minute throttle -- it
